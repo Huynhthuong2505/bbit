@@ -1,2 +1,1 @@
-# bbit
-bbit
+# AI Coding Workspace
