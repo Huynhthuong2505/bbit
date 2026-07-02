@@ -160,3 +160,23 @@ test('renders the AI Hub and Model Comparison feature panels with their headings
   assert.match(root.innerHTML, /<h2>Prompt Library<\/h2>/);
   assert.match(root.innerHTML, /<h2>One-click Deployment<\/h2>/);
 });
+
+test('renders exactly five feature panels for AI Hub, model comparison, prompt library, plugin marketplace and deployment', async () => {
+  const root = await renderMain();
+  const featurePanelMatches = root.innerHTML.match(/class="feature-panel"/g) || [];
+  assert.equal(featurePanelMatches.length, 5);
+});
+
+test('renders provider cards in the same order as the providers data source', async () => {
+  const root = await renderMain();
+  const positions = providers.map((provider) => root.innerHTML.indexOf(`<strong>${provider.name}</strong>`));
+  assert.ok(positions.every((pos) => pos !== -1), 'expected every provider to be rendered');
+  assert.deepEqual(positions, [...positions].sort((a, b) => a - b), 'provider cards should appear in providers array order');
+});
+
+test('renders deploy items in the same order as the deployTargets data source', async () => {
+  const root = await renderMain();
+  const positions = deployTargets.map((target) => root.innerHTML.indexOf(`<div class="deploy-item">\u2705 ${target}</div>`));
+  assert.ok(positions.every((pos) => pos !== -1), 'expected every deploy target to be rendered');
+  assert.deepEqual(positions, [...positions].sort((a, b) => a - b), 'deploy items should appear in deployTargets array order');
+});

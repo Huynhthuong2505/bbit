@@ -37,11 +37,24 @@ test('package.json defines a test script that runs the node test runner against 
   assert.match(pkg.scripts.test, /tests\/\*\*\/\*\.test\.mjs/);
 });
 
+test('package.json test script runs non-interactively and never enables watch mode', async () => {
+  const raw = await readFile(resolve('package.json'), 'utf8');
+  const pkg = JSON.parse(raw);
+
+  assert.doesNotMatch(pkg.scripts.test, /--watch/);
+});
+
 test('.gitignore excludes the build output directory', async () => {
   const content = await readFile(resolve('.gitignore'), 'utf8');
   assert.match(content, /(^|\n)dist\/(\n|$)/);
   // pre-existing entries should still be present
   assert.match(content, /__pycache__\//);
+});
+
+test('.gitignore does not exclude the tests/ or src/ source directories', async () => {
+  const content = await readFile(resolve('.gitignore'), 'utf8');
+  assert.doesNotMatch(content, /(^|\n)tests\/?(\n|$)/);
+  assert.doesNotMatch(content, /(^|\n)src\/?(\n|$)/);
 });
 
 test('src/styles.css has balanced braces and defines the new workspace selectors', async () => {
