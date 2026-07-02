@@ -111,10 +111,8 @@ test('promptTemplates, plugins, and deployTargets contain no empty or duplicate 
   }
 });
 
-test('sampleCode declares the agent mode capability flags advertised by the workspace', () => {
-  // Regression guard: src/main.js renders sampleCode verbatim (HTML-escaped)
-  // into the Monaco preview, so these specific flags must stay present for
-  // the marketing copy about agent mode to remain accurate.
-  assert.match(sampleCode, /agentMode=\{\{\s*canWriteFiles:\s*true,\s*canRunBuilds:\s*true,\s*canCommit:\s*true\s*\}\}/);
-  assert.match(sampleCode, /livePreview=\{\{\s*frameworks:\s*\["React",\s*"Vue",\s*"Next\.js",\s*"Vite"\]\s*\}\}/);
+test('sampleCode advertises the same provider list and agent/live-preview capabilities documented for the workspace', () => {
+  assert.match(sampleCode, /providers=\{\["openai", "anthropic", "gemini", "openrouter"\]\}/);
+  assert.match(sampleCode, /agentMode=\{\{ canWriteFiles: true, canRunBuilds: true, canCommit: true \}\}/);
+  assert.match(sampleCode, /livePreview=\{\{ frameworks: \["React", "Vue", "Next\.js", "Vite"\] \}\}/);
 });

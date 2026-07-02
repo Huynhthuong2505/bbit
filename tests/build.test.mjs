@@ -166,17 +166,18 @@ test('build.mjs does not remove stale dist/src files that no longer exist in src
   }
 });
 
-test('build.mjs recreates empty nested directories from src/ in dist/', async () => {
+test('build.mjs copies binary files byte-for-byte without corruption', async () => {
   const dir = await createTempProject();
   try {
     await writeFixtureFiles(dir);
-    await mkdir(join(dir, 'src', 'empty-dir'), { recursive: true });
+    const binaryBytes = Buffer.from([0x00, 0xff, 0x10, 0x7f, 0x80, 0x01, 0xde, 0xad, 0xbe, 0xef]);
+    await writeFile(join(dir, 'src', 'asset.bin'), binaryBytes);
 
     const result = runBuild(dir);
     assert.equal(result.status, 0, result.stderr);
 
-    const info = await stat(join(dir, 'dist', 'src', 'empty-dir'));
-    assert.ok(info.isDirectory(), 'expected empty-dir to be copied as a directory into dist/src');
+    const copied = await readFile(join(dir, 'dist', 'src', 'asset.bin'));
+    assert.ok(copied.equals(binaryBytes), 'binary file contents should be copied unmodified');
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

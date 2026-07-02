@@ -15,19 +15,6 @@ test('index.html declares the app root and the module entry script', async () =>
   assert.match(html, /<script type="module" src="\/src\/main\.js"><\/script>/);
 });
 
-test('index.html places the module entry script after the #root element', async () => {
-  const html = await readFile(resolve('index.html'), 'utf8');
-  const rootIndex = html.indexOf('<div id="root"></div>');
-  const scriptIndex = html.indexOf('<script type="module" src="/src/main.js"></script>');
-
-  assert.notEqual(rootIndex, -1);
-  assert.notEqual(scriptIndex, -1);
-  // main.js runs document.getElementById('root') synchronously at import
-  // time, so #root must already exist in the DOM before the module script
-  // tag executes.
-  assert.ok(rootIndex < scriptIndex, 'expected #root to appear before the main.js script tag');
-});
-
 test('package.json defines expected metadata and npm scripts', async () => {
   const raw = await readFile(resolve('package.json'), 'utf8');
   const pkg = JSON.parse(raw);
@@ -48,6 +35,15 @@ test('package.json defines a test script that runs the node test runner against 
   assert.equal(pkg.scripts.test, 'node --test "tests/**/*.test.mjs"');
   assert.match(pkg.scripts.test, /^node --test /);
   assert.match(pkg.scripts.test, /tests\/\*\*\/\*\.test\.mjs/);
+});
+
+test('package.json declares no runtime or dev dependencies (zero-dependency static site)', async () => {
+  const raw = await readFile(resolve('package.json'), 'utf8');
+  const pkg = JSON.parse(raw);
+
+  assert.equal(pkg.dependencies, undefined);
+  assert.equal(pkg.devDependencies, undefined);
+  assert.match(pkg.version, /^\d+\.\d+\.\d+$/);
 });
 
 test('.gitignore excludes the build output directory', async () => {

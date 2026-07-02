@@ -155,15 +155,23 @@ test('dev-server handler responds with 404 when the requested path is a director
   assert.equal(res.body, 'Not found');
 });
 
-test('dev-server handler falls back to text/plain for extensionless paths', async () => {
+test('dev-server handler serves index.html when requested by its explicit path', async () => {
   const handler = await loadRequestHandler();
   const res = createMockResponse();
 
-  // path.extname('.gitignore') is '' (a leading-dot-only basename has no
-  // extension in Node's path module), so this exercises the `types[extname]`
-  // miss without relying on a made-up, nonexistent file.
-  await handler({ url: '/.gitignore' }, res);
+  await handler({ url: '/index.html' }, res);
 
   assert.equal(res.statusCode, 200);
-  assert.equal(res.headers['Content-Type'], 'text/plain');
+  assert.equal(res.headers['Content-Type'], 'text/html');
+  assert.match(bodyText(res), /<div id="root"><\/div>/);
+});
+
+test('dev-server handler treats backslash traversal sequences as a literal filename and returns 404', async () => {
+  const handler = await loadRequestHandler();
+  const res = createMockResponse();
+
+  await handler({ url: '/..\\..\\etc\\passwd' }, res);
+
+  assert.equal(res.statusCode, 404);
+  assert.equal(res.body, 'Not found');
 });

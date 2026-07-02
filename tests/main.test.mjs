@@ -161,13 +161,11 @@ test('renders the AI Hub and Model Comparison feature panels with their headings
   assert.match(root.innerHTML, /<h2>One-click Deployment<\/h2>/);
 });
 
-test('sample code preview leaves single quotes unescaped (escapeHtml only targets & < > ")', async () => {
+test('renders exactly one comparison article and deploy item per configured entry (no duplicates or omissions)', async () => {
   const root = await renderMain();
-  // escapeHtml() in src/main.js only maps &, <, >, and " — apostrophes pass
-  // through untouched. This pins down that documented behavior so a future
-  // change to the escape map is a deliberate, visible diff rather than a
-  // silent regression.
-  assert.ok(root.innerHTML.includes("from '@bbit/workspace';"));
-  assert.ok(!root.innerHTML.includes('&#39;'));
-  assert.ok(!root.innerHTML.includes('&apos;'));
+  const comparisonMatches = root.innerHTML.match(/<article><h4>/g) || [];
+  assert.equal(comparisonMatches.length, modelComparison.length);
+
+  const deployMatches = root.innerHTML.match(/class="deploy-item"/g) || [];
+  assert.equal(deployMatches.length, deployTargets.length);
 });
