@@ -1,7 +1,7 @@
 import { test, describe, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, mkdir, writeFile, readFile, rm, access } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm, access, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -109,5 +109,69 @@ describe('scripts/build.mjs against a scratch project', () => {
     } finally {
       await rm(tempDir, { recursive: true, force: true });
     }
+  });
+
+  test('fails when index.html and src/styles.css exist but src/main.js is missing', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'aicw-build-nomain-'));
+    try {
+      await writeFile(join(tempDir, 'index.html'), '<html></html>');
+      await mkdir(join(tempDir, 'src'), { recursive: true });
+      await writeFile(join(tempDir, 'src', 'styles.css'), 'body {}');
+
+      const result = runBuild(tempDir);
+
+      assert.notEqual(result.status, 0);
+      await assert.rejects(access(join(tempDir, 'dist')));
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test('copies an empty nested directory under src/ into dist/ without error', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'aicw-build-emptydir-'));
+    try {
+      await writeFile(join(tempDir, 'index.html'), '<html>empty-dir</html>');
+      await mkdir(join(tempDir, 'src', 'empty'), { recursive: true });
+      await writeFile(join(tempDir, 'src', 'main.js'), '// main');
+      await writeFile(join(tempDir, 'src', 'styles.css'), 'body {}');
+
+      const result = runBuild(tempDir);
+
+      assert.equal(result.status, 0, `build script exited with status ${result.status}: ${result.stderr}`);
+      const emptyDirEntries = await readdir(join(tempDir, 'dist', 'src', 'empty'));
+      assert.deepEqual(emptyDirEntries, []);
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test('does not remove stale files already present in dist/ that no longer exist in src/', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'aicw-build-stale-'));
+    try {
+      await writeFile(join(tempDir, 'index.html'), '<html>stale</html>');
+      await mkdir(join(tempDir, 'src'), { recursive: true });
+      await writeFile(join(tempDir, 'src', 'main.js'), '// main');
+      await writeFile(join(tempDir, 'src', 'styles.css'), 'body {}');
+
+      // Simulate a leftover build artifact from a previous run whose source
+      // file has since been deleted.
+      await mkdir(join(tempDir, 'dist', 'src'), { recursive: true });
+      await writeFile(join(tempDir, 'dist', 'src', 'old-removed-file.js'), '// stale output');
+
+      const result = runBuild(tempDir);
+
+      assert.equal(result.status, 0, `build script exited with status ${result.status}: ${result.stderr}`);
+      const staleContent = await readFile(join(tempDir, 'dist', 'src', 'old-removed-file.js'), 'utf8');
+      assert.equal(staleContent, '// stale output');
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('package.json test script', () => {
+  test('points node --test at the test/ directory used by these test files', async () => {
+    const pkg = JSON.parse(await readFile(join(repoRoot, 'package.json'), 'utf8'));
+    assert.equal(pkg.scripts.test, 'node --test test/');
   });
 });

@@ -60,6 +60,19 @@ describe('workspace-data files', () => {
     assert.equal(activeFiles.length, 1);
     assert.equal(activeFiles[0].name, 'src/App.tsx');
   });
+
+  test('does not contain duplicate file names', () => {
+    const names = files.map((file) => file.name);
+    assert.equal(new Set(names).size, names.length);
+  });
+
+  test('leaves "active" undefined (falsy) on entries that are not the active file', () => {
+    const inactiveFiles = files.filter((file) => file.name !== 'src/App.tsx');
+    assert.ok(inactiveFiles.length > 0);
+    for (const file of inactiveFiles) {
+      assert.ok(!file.active, `expected ${file.name} to not be marked active`);
+    }
+  });
 });
 
 describe('workspace-data pill lists', () => {
@@ -139,5 +152,9 @@ describe('workspace-data sampleCode', () => {
   test('spans multiple lines', () => {
     const lines = sampleCode.split('\n');
     assert.ok(lines.length > 1);
+  });
+
+  test('does not contain a trailing newline', () => {
+    assert.ok(!sampleCode.endsWith('\n'));
   });
 });

@@ -51,6 +51,10 @@ describe('main.js top-level layout', () => {
     assert.ok(html.includes('Compare models'));
     assert.ok(html.includes('Sign in GitHub'));
   });
+
+  test('renders the topbar Docs button', () => {
+    assert.ok(html.includes('<button>Docs</button>'));
+  });
 });
 
 describe('main.js workspace preview', () => {
@@ -76,6 +80,19 @@ describe('main.js workspace preview', () => {
     assert.ok(html.includes('Run agent'));
     assert.ok(html.includes('Creating folders'));
     assert.ok(html.includes('Committing Git'));
+  });
+
+  test('marks exactly one explorer file as active, regardless of how many files exist', () => {
+    const activeMatches = html.match(/<div class="file active">/g) || [];
+    assert.equal(activeMatches.length, 1);
+  });
+
+  test('renders the editor tabs and terminal footer', () => {
+    assert.ok(html.includes('<span>App.tsx</span>'));
+    assert.ok(html.includes('<span>runner.ts</span>'));
+    assert.ok(html.includes('<span>models.ts</span>'));
+    assert.ok(html.includes('npm run build'));
+    assert.ok(html.includes('preview reloaded'));
   });
 });
 

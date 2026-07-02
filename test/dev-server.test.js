@@ -115,4 +115,26 @@ describe('dev-server.mjs path traversal handling', () => {
     assert.equal(res.status, 200);
     assert.equal(await res.text(), expected);
   });
+
+  test('does not escape the working directory when ".." segments are percent-encoded', async () => {
+    const res = await get('/%2e%2e/%2e%2e/%2e%2e/etc/passwd');
+
+    // The WHATWG URL parser percent-decodes the pathname before normalize()
+    // runs, so encoded traversal segments are collapsed the same way as
+    // literal "../" segments and cannot reach files outside process.cwd().
+    assert.equal(res.status, 404);
+  });
+});
+
+describe('dev-server.mjs query string handling', () => {
+  test('ignores an appended query string when resolving the file path', async () => {
+    const [res, expected] = await Promise.all([
+      get('/index.html?cache=bust&foo=bar'),
+      readFile(join(process.cwd(), 'index.html'), 'utf8'),
+    ]);
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('content-type'), 'text/html');
+    assert.equal(await res.text(), expected);
+  });
 });
