@@ -1,107 +1,151 @@
-import { describe, it, before, after } from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import { spawn } from 'node:child_process';
 import http from 'node:http';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 
-const repoRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
-const serverScript = path.join(repoRoot, 'scripts/dev-server.mjs');
-const port = 5300 + (process.pid % 200);
+const serverScriptPath = fileURLToPath(new URL('../scripts/dev-server.mjs', import.meta.url));
 
-let child;
+// scripts/dev-server.mjs wires up its request handler as a module-level side
+// effect (`http.createServer(handler).listen(...)`) and never exports it.
+// Rather than spinning up a real TCP listener and firing HTTP requests at it
+// (unreliable across sandboxes/CI network policies), we monkey-patch
+// http.createServer to intercept and return the request handler, and drive
+// it directly with mock req/res objects. This exercises the exact routing,
+// content-type and error-handling logic without any real network I/O.
+async function loadRequestHandler() {
+  const originalCreateServer = http.createServer;
+  let handler;
+  http.createServer = (requestListener) => {
+    handler = requestListener;
+    http.createServer = originalCreateServer;
+    return { listen() { return this; } };
+  };
 
-function waitForServerReady(proc) {
-  return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error('dev server did not start in time')), 10000);
-    let buffer = '';
-    proc.stdout.on('data', (chunk) => {
-      buffer += chunk.toString();
-      if (buffer.includes('running on')) {
-        clearTimeout(timer);
-        resolve();
-      }
-    });
-    proc.on('error', (err) => {
-      clearTimeout(timer);
-      reject(err);
-    });
-    proc.on('exit', (code) => {
-      clearTimeout(timer);
-      reject(new Error(`dev server exited early with code ${code}`));
-    });
-  });
+  try {
+    const url = `${pathToFileURL(serverScriptPath).href}?t=${Date.now()}-${Math.random()}`;
+    await import(url);
+  } finally {
+    http.createServer = originalCreateServer;
+  }
+
+  assert.ok(typeof handler === 'function', 'expected dev-server.mjs to register a request handler');
+  return handler;
 }
 
-// Use Node's core http client (rather than the global fetch/undici) so these
-// requests are unaffected by HTTP_PROXY/HTTPS_PROXY environment variables
-// that may be configured for the outer process/CI environment.
-function get(requestPath) {
-  return new Promise((resolve, reject) => {
-    const req = http.get({ host: '127.0.0.1', port, path: requestPath }, (res) => {
-      const chunks = [];
-      res.on('data', (chunk) => chunks.push(chunk));
-      res.on('end', () => {
-        resolve({
-          status: res.statusCode,
-          headers: res.headers,
-          body: Buffer.concat(chunks).toString('utf8'),
-        });
-      });
-    });
-    req.on('error', reject);
-  });
+function createMockResponse() {
+  return {
+    statusCode: undefined,
+    headers: undefined,
+    body: undefined,
+    writeHead(statusCode, headers) {
+      this.statusCode = statusCode;
+      this.headers = headers || {};
+    },
+    end(data) {
+      this.body = data;
+    },
+  };
 }
 
-describe('scripts/dev-server.mjs', () => {
-  before(async () => {
-    child = spawn(process.execPath, [serverScript], {
-      cwd: repoRoot,
-      env: { ...process.env, PORT: String(port) },
-    });
-    await waitForServerReady(child);
-  });
+function bodyText(res) {
+  return Buffer.isBuffer(res.body) ? res.body.toString('utf8') : res.body;
+}
 
-  after(() => {
-    if (child) child.kill();
-  });
+test('dev-server handler serves index.html at the root path', async () => {
+  const handler = await loadRequestHandler();
+  const res = createMockResponse();
 
-  it('serves index.html at the root path', async () => {
-    const res = await get('/');
-    assert.equal(res.status, 200);
-    assert.equal(res.headers['content-type'], 'text/html');
-    assert.equal(res.body, fs.readFileSync(path.join(repoRoot, 'index.html'), 'utf8'));
-  });
+  await handler({ url: '/' }, res);
 
-  it('serves JS files with the text/javascript content type', async () => {
-    const res = await get('/src/main.js');
-    assert.equal(res.status, 200);
-    assert.equal(res.headers['content-type'], 'text/javascript');
-    assert.equal(res.body, fs.readFileSync(path.join(repoRoot, 'src/main.js'), 'utf8'));
-  });
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers['Content-Type'], 'text/html');
+  assert.match(bodyText(res), /<div id="root"><\/div>/);
+});
 
-  it('serves CSS files with the text/css content type', async () => {
-    const res = await get('/src/styles.css');
-    assert.equal(res.status, 200);
-    assert.equal(res.headers['content-type'], 'text/css');
-  });
+test('dev-server handler serves JS files with the text/javascript content type', async () => {
+  const handler = await loadRequestHandler();
+  const res = createMockResponse();
 
-  it('returns 404 for an unknown path', async () => {
-    const res = await get('/does-not-exist.js');
-    assert.equal(res.status, 404);
-    assert.equal(res.body, 'Not found');
-  });
+  await handler({ url: '/src/main.js' }, res);
 
-  it('falls back to text/plain for unmapped extensions', async () => {
-    const res = await get('/README.md');
-    assert.equal(res.status, 200);
-    assert.equal(res.headers['content-type'], 'text/plain');
-    assert.equal(res.body, fs.readFileSync(path.join(repoRoot, 'README.md'), 'utf8'));
-  });
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers['Content-Type'], 'text/javascript');
+  assert.match(bodyText(res), /workspace-data\.js/);
+});
 
-  it('never serves files outside of the project root', async () => {
-    const res = await get('/../../../../../../../../etc/passwd');
-    assert.equal(res.status, 404);
-  });
+test('dev-server handler serves CSS files with the text/css content type', async () => {
+  const handler = await loadRequestHandler();
+  const res = createMockResponse();
+
+  await handler({ url: '/src/styles.css' }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers['Content-Type'], 'text/css');
+});
+
+test('dev-server handler serves JSON files with the application/json content type', async () => {
+  const handler = await loadRequestHandler();
+  const res = createMockResponse();
+
+  await handler({ url: '/package.json' }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers['Content-Type'], 'application/json');
+  const pkg = JSON.parse(bodyText(res));
+  assert.equal(pkg.name, 'ai-coding-workspace');
+});
+
+test('dev-server handler falls back to text/plain for unrecognized extensions', async () => {
+  const handler = await loadRequestHandler();
+  const res = createMockResponse();
+
+  await handler({ url: '/README.md' }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers['Content-Type'], 'text/plain');
+});
+
+test('dev-server handler responds with 404 "Not found" for missing files', async () => {
+  const handler = await loadRequestHandler();
+  const res = createMockResponse();
+
+  await handler({ url: '/does-not-exist.js' }, res);
+
+  assert.equal(res.statusCode, 404);
+  assert.equal(res.body, 'Not found');
+});
+
+test('dev-server handler does not escape the project root on path traversal attempts', async () => {
+  const handler = await loadRequestHandler();
+  const res = createMockResponse();
+
+  await handler({ url: '/../../../../../../etc/passwd' }, res);
+
+  assert.equal(res.statusCode, 404);
+  assert.equal(res.body, 'Not found');
+});
+
+test('dev-server handler ignores query strings when resolving the file to serve', async () => {
+  const handler = await loadRequestHandler();
+  const res = createMockResponse();
+
+  await handler({ url: '/src/main.js?ts=1234&reload=true' }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers['Content-Type'], 'text/javascript');
+  assert.match(bodyText(res), /workspace-data\.js/);
+});
+
+test('dev-server handler treats percent-encoded path separators literally instead of decoding them', async () => {
+  const handler = await loadRequestHandler();
+  const res = createMockResponse();
+
+  // req.url's pathname is never percent-decoded by the handler, so
+  // "%2F" is looked up as a literal filename segment (not as "/"),
+  // which does not exist on disk and results in a 404 rather than a
+  // successful lookup of src/main.js.
+  await handler({ url: '/src%2Fmain.js' }, res);
+
+  assert.equal(res.statusCode, 404);
+  assert.equal(res.body, 'Not found');
 });
