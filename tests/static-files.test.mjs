@@ -3,6 +3,8 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
+import { providers, deployTargets } from '../src/workspace-data.js';
+
 const resolve = (relativePath) => fileURLToPath(new URL(`../${relativePath}`, import.meta.url));
 
 test('index.html declares the app root and the module entry script', async () => {
@@ -26,13 +28,13 @@ test('package.json defines expected metadata and npm scripts', async () => {
   assert.equal(pkg.scripts.dev, 'node scripts/dev-server.mjs');
   assert.equal(pkg.scripts.build, 'node scripts/build.mjs');
   assert.equal(pkg.scripts.preview, 'node scripts/dev-server.mjs');
-  assert.equal(pkg.scripts.test, 'node --test "tests/**/*.test.mjs"');
 });
 
-test('package.json test script invokes the built-in node test runner against every test file', async () => {
+test('package.json defines a test script that runs the node test runner against tests/', async () => {
   const raw = await readFile(resolve('package.json'), 'utf8');
   const pkg = JSON.parse(raw);
 
+  assert.equal(pkg.scripts.test, 'node --test "tests/**/*.test.mjs"');
   assert.match(pkg.scripts.test, /^node --test /);
   assert.match(pkg.scripts.test, /tests\/\*\*\/\*\.test\.mjs/);
 });
@@ -80,5 +82,27 @@ test('README.md documents the product pillars and local dev/build commands', asy
     'Model comparison',
   ]) {
     assert.ok(readme.includes(pillar), `expected README.md to mention "${pillar}"`);
+  }
+});
+
+test('index.html declares a lang attribute on the root html element', async () => {
+  const html = await readFile(resolve('index.html'), 'utf8');
+  assert.match(html, /<html lang="en">/);
+});
+
+test('README.md stays in sync with the deploy targets defined in src/workspace-data.js', async () => {
+  const readme = await readFile(resolve('README.md'), 'utf8');
+  for (const target of deployTargets) {
+    assert.ok(readme.includes(target), `expected README.md to mention deploy target "${target}"`);
+  }
+});
+
+test('README.md stays in sync with the AI providers defined in src/workspace-data.js', async () => {
+  const readme = await readFile(resolve('README.md'), 'utf8');
+  for (const provider of providers) {
+    // README refers to "Google AI/Gemini" and "local Ollama" rather than the exact
+    // provider.name strings, so check on the distinctive brand token instead.
+    const token = provider.name.split(' ')[0];
+    assert.ok(readme.includes(token), `expected README.md to mention provider "${token}"`);
   }
 });

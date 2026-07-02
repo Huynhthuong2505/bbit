@@ -125,26 +125,64 @@ test('dev-server handler does not escape the project root on path traversal atte
   assert.equal(res.body, 'Not found');
 });
 
-test('dev-server handler ignores query strings when resolving the file to serve', async () => {
+test('dev-server handler responds with 404 for percent-encoded traversal sequences', async () => {
   const handler = await loadRequestHandler();
   const res = createMockResponse();
 
-  await handler({ url: '/src/main.js?ts=1234&reload=true' }, res);
+  await handler({ url: '/%2e%2e/%2e%2e/etc/passwd' }, res);
 
-  assert.equal(res.statusCode, 200);
-  assert.equal(res.headers['Content-Type'], 'text/javascript');
-  assert.match(bodyText(res), /workspace-data\.js/);
+  assert.equal(res.statusCode, 404);
+  assert.equal(res.body, 'Not found');
 });
 
-test('dev-server handler treats percent-encoded path separators literally instead of decoding them', async () => {
+test('dev-server handler ignores query strings when resolving the requested file', async () => {
   const handler = await loadRequestHandler();
   const res = createMockResponse();
 
-  // req.url's pathname is never percent-decoded by the handler, so
-  // "%2F" is looked up as a literal filename segment (not as "/"),
-  // which does not exist on disk and results in a 404 rather than a
-  // successful lookup of src/main.js.
-  await handler({ url: '/src%2Fmain.js' }, res);
+  await handler({ url: '/src/styles.css?v=123' }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers['Content-Type'], 'text/css');
+});
+
+test('dev-server handler responds with 404 when the requested path is a directory', async () => {
+  const handler = await loadRequestHandler();
+  const res = createMockResponse();
+
+  await handler({ url: '/src' }, res);
+
+  assert.equal(res.statusCode, 404);
+  assert.equal(res.body, 'Not found');
+});
+
+test('dev-server handler serves the same index.html content for an explicit /index.html request', async () => {
+  const handler = await loadRequestHandler();
+  const rootRes = createMockResponse();
+  const explicitRes = createMockResponse();
+
+  await handler({ url: '/' }, rootRes);
+  await handler({ url: '/index.html' }, explicitRes);
+
+  assert.equal(explicitRes.statusCode, 200);
+  assert.equal(explicitRes.headers['Content-Type'], 'text/html');
+  assert.equal(bodyText(explicitRes), bodyText(rootRes));
+});
+
+test('dev-server handler ignores hash fragments when resolving the requested file', async () => {
+  const handler = await loadRequestHandler();
+  const res = createMockResponse();
+
+  await handler({ url: '/src/styles.css#section' }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers['Content-Type'], 'text/css');
+});
+
+test('dev-server handler treats extensions case-sensitively (uppercase JS request 404s rather than matching a lowercase file)', async () => {
+  const handler = await loadRequestHandler();
+  const res = createMockResponse();
+
+  await handler({ url: '/src/main.JS' }, res);
 
   assert.equal(res.statusCode, 404);
   assert.equal(res.body, 'Not found');
