@@ -2,18 +2,41 @@ import { test, before, describe } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import http from 'node:http';
 
 // scripts/dev-server.mjs starts listening as a side effect of being imported.
 // We give it a dedicated port via an env var set before the dynamic import,
-// then exercise it over real HTTP requests. Every request uses a bounded
-// timeout so a broken/unreachable server fails the test quickly instead of
-// hanging the test run.
+// then exercise it over real HTTP requests. We use Node's core http client
+// (rather than the global fetch/undici) so these requests are unaffected by
+// HTTP_PROXY/HTTPS_PROXY environment variables that may be configured for
+// the outer process/CI environment. Every request uses a bounded timeout so
+// a broken/unreachable server fails the test quickly instead of hanging the
+// test run.
 const port = 20000 + (process.pid % 10000);
-const baseUrl = `http://localhost:${port}`;
 const REQUEST_TIMEOUT_MS = 2000;
 
-function get(path) {
-  return fetch(`${baseUrl}${path}`, { signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS) });
+function get(path, { method = 'GET' } = {}) {
+  return new Promise((resolve, reject) => {
+    const req = http.request(
+      { host: '127.0.0.1', port, path, method, timeout: REQUEST_TIMEOUT_MS },
+      (res) => {
+        const chunks = [];
+        res.on('data', (chunk) => chunks.push(chunk));
+        res.on('end', () => {
+          const body = Buffer.concat(chunks);
+          resolve({
+            status: res.statusCode,
+            headers: { get: (name) => res.headers[name.toLowerCase()] },
+            text: async () => body.toString('utf8'),
+            arrayBuffer: async () => body,
+          });
+        });
+      },
+    );
+    req.on('timeout', () => req.destroy(new Error(`request to ${path} timed out`)));
+    req.on('error', reject);
+    req.end();
+  });
 }
 
 async function waitForServer(path, attempts = 20) {
@@ -26,7 +49,7 @@ async function waitForServer(path, attempts = 20) {
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
   }
-  throw new Error(`Server at ${baseUrl}${path} did not become ready in time`);
+  throw new Error(`Server at http://127.0.0.1:${port}${path} did not become ready in time`);
 }
 
 before(async () => {
@@ -93,6 +116,40 @@ describe('dev-server.mjs static file serving', () => {
     assert.equal(res.status, 404);
     assert.equal(await res.text(), 'Not found');
   });
+
+  test('serves nested files under src/ with the correct content-type', async () => {
+    const [res, expected] = await Promise.all([
+      get('/src/workspace-data.js'),
+      readFile(join(process.cwd(), 'src', 'workspace-data.js'), 'utf8'),
+    ]);
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('content-type'), 'text/javascript');
+    assert.equal(await res.text(), expected);
+  });
+
+  test('ignores query strings when resolving the file to serve', async () => {
+    const [res, expected] = await Promise.all([
+      get('/index.html?foo=bar&baz=1'),
+      readFile(join(process.cwd(), 'index.html'), 'utf8'),
+    ]);
+
+    assert.equal(res.status, 200);
+    assert.equal(await res.text(), expected);
+  });
+
+  test('returns 404 when the request path is a directory rather than a file', async () => {
+    const res = await get('/src');
+
+    assert.equal(res.status, 404);
+  });
+
+  test('serves a file regardless of HTTP method, since the handler does not branch on req.method', async () => {
+    const res = await get('/index.html', { method: 'POST' });
+
+    assert.equal(res.status, 200);
+    assert.equal(res.headers.get('content-type'), 'text/html');
+  });
 });
 
 describe('dev-server.mjs path traversal handling', () => {
@@ -116,25 +173,9 @@ describe('dev-server.mjs path traversal handling', () => {
     assert.equal(await res.text(), expected);
   });
 
-  test('does not escape the working directory when ".." segments are percent-encoded', async () => {
-    const res = await get('/%2e%2e/%2e%2e/%2e%2e/etc/passwd');
+  test('does not escape the working directory for percent-encoded ../ segments', async () => {
+    const res = await get('/%2e%2e/%2e%2e/%2e%2e/%2e%2e/%2e%2e/%2e%2e/etc/passwd');
 
-    // The WHATWG URL parser percent-decodes the pathname before normalize()
-    // runs, so encoded traversal segments are collapsed the same way as
-    // literal "../" segments and cannot reach files outside process.cwd().
     assert.equal(res.status, 404);
-  });
-});
-
-describe('dev-server.mjs query string handling', () => {
-  test('ignores an appended query string when resolving the file path', async () => {
-    const [res, expected] = await Promise.all([
-      get('/index.html?cache=bust&foo=bar'),
-      readFile(join(process.cwd(), 'index.html'), 'utf8'),
-    ]);
-
-    assert.equal(res.status, 200);
-    assert.equal(res.headers.get('content-type'), 'text/html');
-    assert.equal(await res.text(), expected);
   });
 });
