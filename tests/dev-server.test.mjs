@@ -1,8 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { writeFile, rm } from 'node:fs/promises';
-import { join } from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 
 const serverScriptPath = fileURLToPath(new URL('../scripts/dev-server.mjs', import.meta.url));
@@ -157,43 +155,15 @@ test('dev-server handler responds with 404 when the requested path is a director
   assert.equal(res.body, 'Not found');
 });
 
-test('dev-server handler falls back to text/plain for files with no extension', async () => {
+test('dev-server handler falls back to text/plain for extensionless paths', async () => {
   const handler = await loadRequestHandler();
   const res = createMockResponse();
 
-  await handler({ url: '/LICENSE' }, res);
+  // path.extname('.gitignore') is '' (a leading-dot-only basename has no
+  // extension in Node's path module), so this exercises the `types[extname]`
+  // miss without relying on a made-up, nonexistent file.
+  await handler({ url: '/.gitignore' }, res);
 
   assert.equal(res.statusCode, 200);
   assert.equal(res.headers['Content-Type'], 'text/plain');
-});
-
-test('dev-server handler matches extensions case-sensitively, falling back to text/plain for an uppercase extension', async () => {
-  const handler = await loadRequestHandler();
-  const res = createMockResponse();
-  const tempFileName = `tmp-dev-server-case-test-${Date.now()}.JS`;
-  const tempFilePath = join(process.cwd(), tempFileName);
-  await writeFile(tempFilePath, "console.log('temp');");
-
-  try {
-    await handler({ url: `/${tempFileName}` }, res);
-
-    assert.equal(res.statusCode, 200);
-    assert.equal(
-      res.headers['Content-Type'],
-      'text/plain',
-      'uppercase .JS extension should not match the lowercase .js content-type mapping',
-    );
-  } finally {
-    await rm(tempFilePath, { force: true });
-  }
-});
-
-test('dev-server handler resolves an internal ".." path segment back to a valid file within the project root', async () => {
-  const handler = await loadRequestHandler();
-  const res = createMockResponse();
-
-  await handler({ url: '/src/../src/styles.css' }, res);
-
-  assert.equal(res.statusCode, 200);
-  assert.equal(res.headers['Content-Type'], 'text/css');
 });

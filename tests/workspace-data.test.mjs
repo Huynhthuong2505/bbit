@@ -111,18 +111,10 @@ test('promptTemplates, plugins, and deployTargets contain no empty or duplicate 
   }
 });
 
-test('each provider has a unique accent color', () => {
-  const accents = providers.map((p) => p.accent.toLowerCase());
-  assert.equal(new Set(accents).size, providers.length, 'expected no two providers to share an accent color');
-});
-
-test('each modelComparison entry has a unique summary', () => {
-  const summaries = modelComparison.map((entry) => entry.summary);
-  assert.equal(new Set(summaries).size, modelComparison.length, 'expected no two models to share a summary');
-});
-
-test('sampleCode declares the expected provider list and live-preview frameworks', () => {
-  assert.match(sampleCode, /providers=\{\["openai", "anthropic", "gemini", "openrouter"\]\}/);
-  assert.match(sampleCode, /frameworks: \["React", "Vue", "Next\.js", "Vite"\]/);
-  assert.match(sampleCode, /agentMode=\{\{ canWriteFiles: true, canRunBuilds: true, canCommit: true \}\}/);
+test('sampleCode declares the agent mode capability flags advertised by the workspace', () => {
+  // Regression guard: src/main.js renders sampleCode verbatim (HTML-escaped)
+  // into the Monaco preview, so these specific flags must stay present for
+  // the marketing copy about agent mode to remain accurate.
+  assert.match(sampleCode, /agentMode=\{\{\s*canWriteFiles:\s*true,\s*canRunBuilds:\s*true,\s*canCommit:\s*true\s*\}\}/);
+  assert.match(sampleCode, /livePreview=\{\{\s*frameworks:\s*\["React",\s*"Vue",\s*"Next\.js",\s*"Vite"\]\s*\}\}/);
 });

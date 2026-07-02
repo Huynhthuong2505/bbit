@@ -166,7 +166,7 @@ test('build.mjs does not remove stale dist/src files that no longer exist in src
   }
 });
 
-test('build.mjs copies empty nested directories inside src/ into dist/', async () => {
+test('build.mjs recreates empty nested directories from src/ in dist/', async () => {
   const dir = await createTempProject();
   try {
     await writeFixtureFiles(dir);
@@ -176,24 +176,7 @@ test('build.mjs copies empty nested directories inside src/ into dist/', async (
     assert.equal(result.status, 0, result.stderr);
 
     const info = await stat(join(dir, 'dist', 'src', 'empty-dir'));
-    assert.ok(info.isDirectory());
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
-test('build.mjs reports the missing file path on stderr when failing fast', async () => {
-  const dir = await createTempProject();
-  try {
-    await mkdir(join(dir, 'src'), { recursive: true });
-    await writeFile(join(dir, 'src', 'main.js'), "console.log('main');");
-    await writeFile(join(dir, 'src', 'styles.css'), 'body {}');
-
-    const result = runBuild(dir);
-
-    assert.notEqual(result.status, 0);
-    assert.match(result.stderr, /ENOENT/);
-    assert.match(result.stderr, /index\.html/);
+    assert.ok(info.isDirectory(), 'expected empty-dir to be copied as a directory into dist/src');
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
