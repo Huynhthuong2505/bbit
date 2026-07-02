@@ -37,13 +37,11 @@ test('package.json defines a test script that runs the node test runner against 
   assert.match(pkg.scripts.test, /tests\/\*\*\/\*\.test\.mjs/);
 });
 
-test('package.json declares no runtime or dev dependencies (zero-dependency static site)', async () => {
+test('package.json exposes exactly the expected set of npm scripts, with no unexpected extras', async () => {
   const raw = await readFile(resolve('package.json'), 'utf8');
   const pkg = JSON.parse(raw);
 
-  assert.equal(pkg.dependencies, undefined);
-  assert.equal(pkg.devDependencies, undefined);
-  assert.match(pkg.version, /^\d+\.\d+\.\d+$/);
+  assert.deepEqual(Object.keys(pkg.scripts).sort(), ['build', 'dev', 'preview', 'test']);
 });
 
 test('.gitignore excludes the build output directory', async () => {

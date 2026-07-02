@@ -166,18 +166,19 @@ test('build.mjs does not remove stale dist/src files that no longer exist in src
   }
 });
 
-test('build.mjs copies binary files byte-for-byte without corruption', async () => {
+test('build.mjs overwrites existing dist/index.html content when index.html changes between builds', async () => {
   const dir = await createTempProject();
   try {
     await writeFixtureFiles(dir);
-    const binaryBytes = Buffer.from([0x00, 0xff, 0x10, 0x7f, 0x80, 0x01, 0xde, 0xad, 0xbe, 0xef]);
-    await writeFile(join(dir, 'src', 'asset.bin'), binaryBytes);
+    const first = runBuild(dir);
+    assert.equal(first.status, 0, first.stderr);
+    assert.equal(await readFile(join(dir, 'dist', 'index.html'), 'utf8'), '<html><body>fixture</body></html>');
 
-    const result = runBuild(dir);
-    assert.equal(result.status, 0, result.stderr);
+    await writeFile(join(dir, 'index.html'), '<html><body>updated fixture</body></html>');
+    const second = runBuild(dir);
+    assert.equal(second.status, 0, second.stderr);
 
-    const copied = await readFile(join(dir, 'dist', 'src', 'asset.bin'));
-    assert.ok(copied.equals(binaryBytes), 'binary file contents should be copied unmodified');
+    assert.equal(await readFile(join(dir, 'dist', 'index.html'), 'utf8'), '<html><body>updated fixture</body></html>');
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

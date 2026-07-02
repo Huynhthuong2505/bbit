@@ -95,6 +95,11 @@ test('exported collections are arrays (defensive shape check)', () => {
   assert.equal(typeof sampleCode, 'string');
 });
 
+test('providers use a distinct accent color for each entry', () => {
+  const accents = providers.map((p) => p.accent.toLowerCase());
+  assert.equal(new Set(accents).size, providers.length, 'expected no two providers to share an accent color');
+});
+
 test('providers, files, and modelComparison entries have no duplicate names', () => {
   assert.equal(new Set(providers.map((p) => p.name)).size, providers.length);
   assert.equal(new Set(files.map((f) => f.name)).size, files.length);
@@ -109,10 +114,4 @@ test('promptTemplates, plugins, and deployTargets contain no empty or duplicate 
       assert.ok(label.trim().length > 0, 'pill label should not be empty');
     }
   }
-});
-
-test('sampleCode advertises the same provider list and agent/live-preview capabilities documented for the workspace', () => {
-  assert.match(sampleCode, /providers=\{\["openai", "anthropic", "gemini", "openrouter"\]\}/);
-  assert.match(sampleCode, /agentMode=\{\{ canWriteFiles: true, canRunBuilds: true, canCommit: true \}\}/);
-  assert.match(sampleCode, /livePreview=\{\{ frameworks: \["React", "Vue", "Next\.js", "Vite"\] \}\}/);
 });

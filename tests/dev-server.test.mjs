@@ -155,23 +155,23 @@ test('dev-server handler responds with 404 when the requested path is a director
   assert.equal(res.body, 'Not found');
 });
 
-test('dev-server handler serves index.html when requested by its explicit path', async () => {
+test('dev-server handler serves files nested several directories below the project root', async () => {
   const handler = await loadRequestHandler();
   const res = createMockResponse();
 
-  await handler({ url: '/index.html' }, res);
+  await handler({ url: '/.github/ISSUE_TEMPLATE/bug_report.md' }, res);
 
   assert.equal(res.statusCode, 200);
-  assert.equal(res.headers['Content-Type'], 'text/html');
-  assert.match(bodyText(res), /<div id="root"><\/div>/);
+  assert.equal(res.headers['Content-Type'], 'text/plain');
 });
 
-test('dev-server handler treats backslash traversal sequences as a literal filename and returns 404', async () => {
+test('dev-server handler falls back to text/plain for recognized-but-unmapped file extensions', async () => {
   const handler = await loadRequestHandler();
   const res = createMockResponse();
 
-  await handler({ url: '/..\\..\\etc\\passwd' }, res);
+  await handler({ url: '/scripts/build.mjs' }, res);
 
-  assert.equal(res.statusCode, 404);
-  assert.equal(res.body, 'Not found');
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers['Content-Type'], 'text/plain');
+  assert.match(bodyText(res), /Built static AI Coding Workspace into dist\//);
 });

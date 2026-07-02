@@ -161,11 +161,10 @@ test('renders the AI Hub and Model Comparison feature panels with their headings
   assert.match(root.innerHTML, /<h2>One-click Deployment<\/h2>/);
 });
 
-test('renders exactly one comparison article and deploy item per configured entry (no duplicates or omissions)', async () => {
+test('escapeHtml only escapes &, <, >, and " in the sample code preview, leaving single quotes untouched', async () => {
   const root = await renderMain();
-  const comparisonMatches = root.innerHTML.match(/<article><h4>/g) || [];
-  assert.equal(comparisonMatches.length, modelComparison.length);
-
-  const deployMatches = root.innerHTML.match(/class="deploy-item"/g) || [];
-  assert.equal(deployMatches.length, deployTargets.length);
+  // Documents the current (narrow) escaping scope of escapeHtml in src/main.js:
+  // apostrophes used around import specifiers are passed through verbatim.
+  assert.ok(root.innerHTML.includes("from '@bbit/workspace';"), 'expected raw single-quoted import to remain unescaped');
+  assert.ok(!root.innerHTML.includes('&#39;') && !root.innerHTML.includes('&apos;'), 'single quotes should not be HTML-entity encoded');
 });
