@@ -94,3 +94,19 @@ test('exported collections are arrays (defensive shape check)', () => {
   }
   assert.equal(typeof sampleCode, 'string');
 });
+
+test('providers, files, and modelComparison entries have no duplicate names', () => {
+  assert.equal(new Set(providers.map((p) => p.name)).size, providers.length);
+  assert.equal(new Set(files.map((f) => f.name)).size, files.length);
+  assert.equal(new Set(modelComparison.map((m) => m.model)).size, modelComparison.length);
+});
+
+test('promptTemplates, plugins, and deployTargets contain no empty or duplicate pill labels', () => {
+  for (const list of [promptTemplates, plugins, deployTargets]) {
+    assert.equal(new Set(list).size, list.length, 'expected no duplicate pill labels');
+    for (const label of list) {
+      assert.equal(typeof label, 'string');
+      assert.ok(label.trim().length > 0, 'pill label should not be empty');
+    }
+  }
+});

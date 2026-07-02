@@ -124,3 +124,33 @@ test('dev-server handler does not escape the project root on path traversal atte
   assert.equal(res.statusCode, 404);
   assert.equal(res.body, 'Not found');
 });
+
+test('dev-server handler responds with 404 for percent-encoded traversal sequences', async () => {
+  const handler = await loadRequestHandler();
+  const res = createMockResponse();
+
+  await handler({ url: '/%2e%2e/%2e%2e/etc/passwd' }, res);
+
+  assert.equal(res.statusCode, 404);
+  assert.equal(res.body, 'Not found');
+});
+
+test('dev-server handler ignores query strings when resolving the requested file', async () => {
+  const handler = await loadRequestHandler();
+  const res = createMockResponse();
+
+  await handler({ url: '/src/styles.css?v=123' }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers['Content-Type'], 'text/css');
+});
+
+test('dev-server handler responds with 404 when the requested path is a directory', async () => {
+  const handler = await loadRequestHandler();
+  const res = createMockResponse();
+
+  await handler({ url: '/src' }, res);
+
+  assert.equal(res.statusCode, 404);
+  assert.equal(res.body, 'Not found');
+});

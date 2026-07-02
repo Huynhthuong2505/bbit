@@ -28,6 +28,15 @@ test('package.json defines expected metadata and npm scripts', async () => {
   assert.equal(pkg.scripts.preview, 'node scripts/dev-server.mjs');
 });
 
+test('package.json defines a test script that runs the node test runner against tests/', async () => {
+  const raw = await readFile(resolve('package.json'), 'utf8');
+  const pkg = JSON.parse(raw);
+
+  assert.equal(pkg.scripts.test, 'node --test "tests/**/*.test.mjs"');
+  assert.match(pkg.scripts.test, /^node --test /);
+  assert.match(pkg.scripts.test, /tests\/\*\*\/\*\.test\.mjs/);
+});
+
 test('.gitignore excludes the build output directory', async () => {
   const content = await readFile(resolve('.gitignore'), 'utf8');
   assert.match(content, /(^|\n)dist\/(\n|$)/);
