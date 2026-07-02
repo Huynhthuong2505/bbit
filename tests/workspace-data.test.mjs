@@ -110,3 +110,15 @@ test('promptTemplates, plugins, and deployTargets contain no empty or duplicate 
     }
   }
 });
+
+test('provider accent colors are all unique', () => {
+  assert.equal(new Set(providers.map((p) => p.accent)).size, providers.length);
+});
+
+test('only the designated file entry is marked active; all others omit or falsy the active flag', () => {
+  const nonActiveEntries = files.filter((file) => file.name !== 'src/App.tsx');
+  assert.equal(nonActiveEntries.length, files.length - 1);
+  for (const file of nonActiveEntries) {
+    assert.notEqual(file.active, true, `expected ${file.name} to not be marked active`);
+  }
+});

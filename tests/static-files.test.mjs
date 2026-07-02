@@ -15,6 +15,12 @@ test('index.html declares the app root and the module entry script', async () =>
   assert.match(html, /<script type="module" src="\/src\/main\.js"><\/script>/);
 });
 
+test('index.html loads exactly one script tag as its entry point', async () => {
+  const html = await readFile(resolve('index.html'), 'utf8');
+  const scriptMatches = html.match(/<script/g) || [];
+  assert.equal(scriptMatches.length, 1);
+});
+
 test('package.json defines expected metadata and npm scripts', async () => {
   const raw = await readFile(resolve('package.json'), 'utf8');
   const pkg = JSON.parse(raw);

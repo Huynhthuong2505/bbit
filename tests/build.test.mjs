@@ -165,3 +165,36 @@ test('build.mjs does not remove stale dist/src files that no longer exist in src
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test('build.mjs copies binary asset content byte-for-byte without corruption', async () => {
+  const dir = await createTempProject();
+  try {
+    await writeFixtureFiles(dir);
+    const binaryData = Buffer.from([0x00, 0xff, 0x10, 0x80, 0x7f, 0x01, 0xfe, 0x89, 0x50, 0x4e, 0x47]);
+    await writeFile(join(dir, 'src', 'icon.bin'), binaryData);
+
+    const result = runBuild(dir);
+    assert.equal(result.status, 0, result.stderr);
+
+    const copied = await readFile(join(dir, 'dist', 'src', 'icon.bin'));
+    assert.ok(copied.equals(binaryData), 'copied binary file should match the source bytes exactly');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('build.mjs mirrors empty directories nested inside src/', async () => {
+  const dir = await createTempProject();
+  try {
+    await writeFixtureFiles(dir);
+    await mkdir(join(dir, 'src', 'empty-dir'), { recursive: true });
+
+    const result = runBuild(dir);
+    assert.equal(result.status, 0, result.stderr);
+
+    const info = await stat(join(dir, 'dist', 'src', 'empty-dir'));
+    assert.ok(info.isDirectory(), 'expected dist/src/empty-dir to be created as a directory');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

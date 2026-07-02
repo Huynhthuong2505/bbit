@@ -160,3 +160,15 @@ test('renders the AI Hub and Model Comparison feature panels with their headings
   assert.match(root.innerHTML, /<h2>Prompt Library<\/h2>/);
   assert.match(root.innerHTML, /<h2>One-click Deployment<\/h2>/);
 });
+
+test('renders exactly one provider card per configured provider (no extra or missing cards)', async () => {
+  const root = await renderMain();
+  const providerCardMatches = root.innerHTML.match(/class="provider-card/g) || [];
+  assert.equal(providerCardMatches.length, providers.length);
+});
+
+test('does not leak "undefined" or stringified objects into the rendered markup', async () => {
+  const root = await renderMain();
+  assert.ok(!root.innerHTML.includes('undefined'), 'markup should not contain the literal string "undefined"');
+  assert.ok(!root.innerHTML.includes('[object Object]'), 'markup should not contain a stringified object');
+});

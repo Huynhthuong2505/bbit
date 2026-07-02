@@ -154,3 +154,65 @@ test('dev-server handler responds with 404 when the requested path is a director
   assert.equal(res.statusCode, 404);
   assert.equal(res.body, 'Not found');
 });
+
+test('dev-server handler falls back to text/plain for files without any extension', async () => {
+  const handler = await loadRequestHandler();
+  const res = createMockResponse();
+
+  await handler({ url: '/LICENSE' }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers['Content-Type'], 'text/plain');
+});
+
+test('dev-server module binds the HTTP server to all interfaces on the default port', async () => {
+  const originalCreateServer = http.createServer;
+  let listenArgs;
+  http.createServer = (requestListener) => {
+    http.createServer = originalCreateServer;
+    return {
+      listen(...args) {
+        listenArgs = args;
+        return this;
+      },
+    };
+  };
+
+  try {
+    const url = `${pathToFileURL(serverScriptPath).href}?t=${Date.now()}-${Math.random()}`;
+    await import(url);
+  } finally {
+    http.createServer = originalCreateServer;
+  }
+
+  assert.equal(listenArgs[0], 5173);
+  assert.equal(listenArgs[1], '0.0.0.0');
+  assert.equal(typeof listenArgs[2], 'function');
+});
+
+test('dev-server module respects a custom PORT environment variable', async () => {
+  const originalCreateServer = http.createServer;
+  const originalPort = process.env.PORT;
+  process.env.PORT = '4321';
+  let listenArgs;
+  http.createServer = (requestListener) => {
+    http.createServer = originalCreateServer;
+    return {
+      listen(...args) {
+        listenArgs = args;
+        return this;
+      },
+    };
+  };
+
+  try {
+    const url = `${pathToFileURL(serverScriptPath).href}?t=${Date.now()}-${Math.random()}`;
+    await import(url);
+  } finally {
+    http.createServer = originalCreateServer;
+    if (originalPort === undefined) delete process.env.PORT;
+    else process.env.PORT = originalPort;
+  }
+
+  assert.equal(listenArgs[0], '4321');
+});
