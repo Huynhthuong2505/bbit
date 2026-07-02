@@ -95,18 +95,26 @@ test('exported collections are arrays (defensive shape check)', () => {
   assert.equal(typeof sampleCode, 'string');
 });
 
-test('providers, files, and modelComparison entries have unique names (no accidental duplicates)', () => {
+test('providers, files, and modelComparison entries have no duplicate names', () => {
   assert.equal(new Set(providers.map((p) => p.name)).size, providers.length);
   assert.equal(new Set(files.map((f) => f.name)).size, files.length);
   assert.equal(new Set(modelComparison.map((m) => m.model)).size, modelComparison.length);
 });
 
-test('promptTemplates, plugins, and deployTargets contain no duplicate or empty pill labels', () => {
+test('promptTemplates, plugins, and deployTargets contain no empty or duplicate pill labels', () => {
   for (const list of [promptTemplates, plugins, deployTargets]) {
     assert.equal(new Set(list).size, list.length, 'expected no duplicate pill labels');
-    for (const item of list) {
-      assert.equal(typeof item, 'string');
-      assert.ok(item.trim().length > 0, 'pill label should not be blank');
+    for (const label of list) {
+      assert.equal(typeof label, 'string');
+      assert.ok(label.trim().length > 0, 'pill label should not be empty');
     }
   }
+});
+
+test('sampleCode has no trailing newline that would misalign the rendered line-number gutter', () => {
+  // src/main.js derives its Monaco line-number gutter from sampleCode.split('\n').
+  // A stray trailing newline would produce a phantom empty final line and a gutter
+  // entry with no corresponding visible code line.
+  assert.ok(!sampleCode.endsWith('\n'), 'sampleCode should not end with a trailing newline');
+  assert.ok(sampleCode.length > 0);
 });
