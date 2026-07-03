@@ -125,26 +125,66 @@ test('dev-server handler does not escape the project root on path traversal atte
   assert.equal(res.body, 'Not found');
 });
 
-test('dev-server handler ignores query strings when resolving the file to serve', async () => {
+test('dev-server handler responds with 404 for percent-encoded traversal sequences', async () => {
   const handler = await loadRequestHandler();
   const res = createMockResponse();
 
-  await handler({ url: '/src/main.js?ts=1234&reload=true' }, res);
+  await handler({ url: '/%2e%2e/%2e%2e/etc/passwd' }, res);
 
-  assert.equal(res.statusCode, 200);
-  assert.equal(res.headers['Content-Type'], 'text/javascript');
-  assert.match(bodyText(res), /workspace-data\.js/);
+  assert.equal(res.statusCode, 404);
+  assert.equal(res.body, 'Not found');
 });
 
-test('dev-server handler treats percent-encoded path separators literally instead of decoding them', async () => {
+test('dev-server handler ignores query strings when resolving the requested file', async () => {
   const handler = await loadRequestHandler();
   const res = createMockResponse();
 
-  // req.url's pathname is never percent-decoded by the handler, so
-  // "%2F" is looked up as a literal filename segment (not as "/"),
-  // which does not exist on disk and results in a 404 rather than a
-  // successful lookup of src/main.js.
-  await handler({ url: '/src%2Fmain.js' }, res);
+  await handler({ url: '/src/styles.css?v=123' }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers['Content-Type'], 'text/css');
+});
+
+test('dev-server handler responds with 404 when the requested path is a directory', async () => {
+  const handler = await loadRequestHandler();
+  const res = createMockResponse();
+
+  await handler({ url: '/src' }, res);
+
+  assert.equal(res.statusCode, 404);
+  assert.equal(res.body, 'Not found');
+});
+
+test('dev-server handler serves /index.html explicitly the same way as the root path', async () => {
+  const handler = await loadRequestHandler();
+  const res = createMockResponse();
+
+  await handler({ url: '/index.html' }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers['Content-Type'], 'text/html');
+  assert.match(bodyText(res), /<div id="root"><\/div>/);
+});
+
+test('dev-server handler falls back to text/plain for extensions not in the content-type map, like .mjs', async () => {
+  // The content-type lookup table only defines .html/.js/.css/.json, so an
+  // existing file with a different extension (the server script itself)
+  // must fall back to the default text/plain type rather than throwing.
+  const handler = await loadRequestHandler();
+  const res = createMockResponse();
+
+  await handler({ url: '/scripts/dev-server.mjs' }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers['Content-Type'], 'text/plain');
+  assert.match(bodyText(res), /createServer/);
+});
+
+test('dev-server handler blocks traversal sequences that appear after a valid path segment', async () => {
+  const handler = await loadRequestHandler();
+  const res = createMockResponse();
+
+  await handler({ url: '/src/../../../../../../etc/passwd' }, res);
 
   assert.equal(res.statusCode, 404);
   assert.equal(res.body, 'Not found');

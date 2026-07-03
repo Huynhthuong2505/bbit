@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import { readFile, readdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 const resolve = (relativePath) => fileURLToPath(new URL(`../${relativePath}`, import.meta.url));
@@ -26,15 +26,29 @@ test('package.json defines expected metadata and npm scripts', async () => {
   assert.equal(pkg.scripts.dev, 'node scripts/dev-server.mjs');
   assert.equal(pkg.scripts.build, 'node scripts/build.mjs');
   assert.equal(pkg.scripts.preview, 'node scripts/dev-server.mjs');
-  assert.equal(pkg.scripts.test, 'node --test "tests/**/*.test.mjs"');
 });
 
-test('package.json test script invokes the built-in node test runner against every test file', async () => {
+test('package.json defines a test script that runs the node test runner against tests/', async () => {
   const raw = await readFile(resolve('package.json'), 'utf8');
   const pkg = JSON.parse(raw);
 
+  assert.equal(pkg.scripts.test, 'node --test "tests/**/*.test.mjs"');
   assert.match(pkg.scripts.test, /^node --test /);
   assert.match(pkg.scripts.test, /tests\/\*\*\/\*\.test\.mjs/);
+});
+
+test('package.json test script glob actually matches every test file under tests/', async () => {
+  const raw = await readFile(resolve('package.json'), 'utf8');
+  const pkg = JSON.parse(raw);
+  assert.match(pkg.scripts.test, /tests\/\*\*\/\*\.test\.mjs/);
+
+  const entries = await readdir(resolve('tests'));
+  const testFiles = entries.filter((name) => name.endsWith('.test.mjs'));
+  // Regression guard: if this file were ever renamed or moved out of
+  // tests/, or if the glob pattern in package.json were narrowed, the
+  // discrepancy would show up here instead of silently skipping suites.
+  assert.ok(testFiles.length >= 5, `expected at least 5 test files under tests/, found ${testFiles.length}`);
+  assert.ok(testFiles.includes('static-files.test.mjs'));
 });
 
 test('.gitignore excludes the build output directory', async () => {
