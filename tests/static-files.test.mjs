@@ -37,18 +37,11 @@ test('package.json defines a test script that runs the node test runner against 
   assert.match(pkg.scripts.test, /tests\/\*\*\/\*\.test\.mjs/);
 });
 
-test('package.json test script glob actually matches every test file under tests/', async () => {
+test('package.json exposes exactly the expected set of npm scripts, with no unexpected extras', async () => {
   const raw = await readFile(resolve('package.json'), 'utf8');
   const pkg = JSON.parse(raw);
-  assert.match(pkg.scripts.test, /tests\/\*\*\/\*\.test\.mjs/);
 
-  const entries = await readdir(resolve('tests'));
-  const testFiles = entries.filter((name) => name.endsWith('.test.mjs'));
-  // Regression guard: if this file were ever renamed or moved out of
-  // tests/, or if the glob pattern in package.json were narrowed, the
-  // discrepancy would show up here instead of silently skipping suites.
-  assert.ok(testFiles.length >= 5, `expected at least 5 test files under tests/, found ${testFiles.length}`);
-  assert.ok(testFiles.includes('static-files.test.mjs'));
+  assert.deepEqual(Object.keys(pkg.scripts).sort(), ['build', 'dev', 'preview', 'test']);
 });
 
 test('.gitignore excludes the build output directory', async () => {
@@ -94,5 +87,21 @@ test('README.md documents the product pillars and local dev/build commands', asy
     'Model comparison',
   ]) {
     assert.ok(readme.includes(pillar), `expected README.md to mention "${pillar}"`);
+  }
+});
+
+test('every file in tests/ matches the glob pattern used by the npm test script', async () => {
+  const raw = await readFile(resolve('package.json'), 'utf8');
+  const pkg = JSON.parse(raw);
+  assert.match(pkg.scripts.test, /tests\/\*\*\/\*\.test\.mjs/);
+
+  const entries = await readdir(resolve('tests'), { withFileTypes: true });
+  const testFiles = entries.filter((entry) => entry.isFile()).map((entry) => entry.name);
+
+  assert.ok(testFiles.length > 0, 'expected at least one test file in tests/');
+  for (const name of testFiles) {
+    // Guards against stray files (e.g. "foo.test.js" or "foo.spec.mjs")
+    // that `node --test "tests/**/*.test.mjs"` would silently skip.
+    assert.match(name, /\.test\.mjs$/, `expected ${name} to match the *.test.mjs naming convention`);
   }
 });

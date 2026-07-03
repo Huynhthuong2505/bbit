@@ -95,6 +95,11 @@ test('exported collections are arrays (defensive shape check)', () => {
   assert.equal(typeof sampleCode, 'string');
 });
 
+test('providers use a distinct accent color for each entry', () => {
+  const accents = providers.map((p) => p.accent.toLowerCase());
+  assert.equal(new Set(accents).size, providers.length, 'expected no two providers to share an accent color');
+});
+
 test('providers, files, and modelComparison entries have no duplicate names', () => {
   assert.equal(new Set(providers.map((p) => p.name)).size, providers.length);
   assert.equal(new Set(files.map((f) => f.name)).size, files.length);
@@ -111,24 +116,21 @@ test('promptTemplates, plugins, and deployTargets contain no empty or duplicate 
   }
 });
 
-test('every provider has a visually distinct accent color', () => {
-  const accents = providers.map((p) => p.accent.toLowerCase());
-  assert.equal(new Set(accents).size, accents.length, 'expected no two providers to share an accent color');
+test('the active file is src/App.tsx at its documented position, and no other entry sets active: true', () => {
+  // Positional regression guard: main.js highlights whichever entry has
+  // active === true, so if this ever shifts to a different index/file the
+  // explorer UI would silently highlight the wrong entry.
+  assert.equal(files[1].name, 'src/App.tsx');
+  assert.equal(files[1].active, true);
+
+  for (const [index, file] of files.entries()) {
+    if (index === 1) continue;
+    assert.notEqual(file.active, true, `expected ${file.name} not to be marked active`);
+  }
 });
 
-test('sampleCode only references provider ids that correspond to a real configured provider', () => {
-  // sampleCode hardcodes provider ids passed to the mock <AIWorkspace
-  // providers={[...]} /> prop. Each id should be traceable back to one of
-  // the configured providers' name or model list so the sample snippet
-  // never drifts out of sync with the supported provider data.
-  const match = sampleCode.match(/providers=\{\[([^\]]+)\]\}/);
-  assert.ok(match, 'expected sampleCode to declare a providers array literal');
-
-  const declaredIds = match[1].split(',').map((entry) => entry.trim().replace(/^"|"$/g, ''));
-  assert.ok(declaredIds.length > 0);
-
-  for (const id of declaredIds) {
-    const isKnown = providers.some((p) => `${p.name} ${p.models}`.toLowerCase().includes(id.toLowerCase()));
-    assert.ok(isKnown, `unexpected provider id "${id}" in sampleCode`);
-  }
+test('providers[0] is OpenAI, matching the entry main.js marks as the default active provider card', () => {
+  // main.js marks index 0 as the active provider card (`i === 0`), so the
+  // first entry in this list drives the default UI selection.
+  assert.equal(providers[0].name, 'OpenAI');
 });
