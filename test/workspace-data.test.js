@@ -38,6 +38,11 @@ describe('workspace-data providers', () => {
     const names = providers.map((provider) => provider.name);
     assert.equal(new Set(names).size, names.length);
   });
+
+  test('does not contain duplicate accent colors', () => {
+    const accents = providers.map((provider) => provider.accent);
+    assert.equal(new Set(accents).size, accents.length);
+  });
 });
 
 describe('workspace-data files', () => {
@@ -66,11 +71,11 @@ describe('workspace-data files', () => {
     assert.equal(new Set(names).size, names.length);
   });
 
-  test('leaves "active" undefined (falsy) on entries that are not the active file', () => {
-    const inactiveFiles = files.filter((file) => file.name !== 'src/App.tsx');
-    assert.ok(inactiveFiles.length > 0);
-    for (const file of inactiveFiles) {
-      assert.ok(!file.active, `expected ${file.name} to not be marked active`);
+  test('leaves "active" undefined for entries that are not the active file', () => {
+    for (const file of files) {
+      if (file.name !== 'src/App.tsx') {
+        assert.equal(file.active, undefined);
+      }
     }
   });
 });

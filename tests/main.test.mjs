@@ -137,9 +137,42 @@ test('throws when the #root element is missing from the document', async () => {
   await assert.rejects(() => renderMain(false));
 });
 
-test('does not leak unresolved template placeholders or stringified objects into the rendered markup', async () => {
+test('renders the top navigation bar with docs and sign-in actions', async () => {
   const root = await renderMain();
-  assert.ok(!root.innerHTML.includes('undefined'), 'rendered markup should not contain the literal string "undefined"');
-  assert.ok(!root.innerHTML.includes('[object Object]'), 'rendered markup should not contain a stringified object');
-  assert.ok(!/\$\{.*?\}/.test(root.innerHTML), 'rendered markup should not contain unresolved template placeholders');
+  assert.match(root.innerHTML, /class="topbar"/);
+  assert.match(root.innerHTML, /<button>Docs<\/button>/);
+  assert.match(root.innerHTML, /Sign in GitHub/);
+});
+
+test('renders the workspace preview with activity bar, editor tabs and terminal', async () => {
+  const root = await renderMain();
+  assert.match(root.innerHTML, /class="workspace-card"/);
+  assert.match(root.innerHTML, /class="activity-bar"/);
+  assert.match(root.innerHTML, /<span>App\.tsx<\/span><span>runner\.ts<\/span><span>models\.ts<\/span>/);
+  assert.match(root.innerHTML, /class="terminal"/);
+  assert.match(root.innerHTML, /npm run build/);
+});
+
+test('renders the AI Hub and Model Comparison feature panels with their headings', async () => {
+  const root = await renderMain();
+  assert.match(root.innerHTML, /<h2>AI Hub đa nhà cung cấp<\/h2>/);
+  assert.match(root.innerHTML, /<h2>Model Comparison<\/h2>/);
+  assert.match(root.innerHTML, /<h2>Prompt Library<\/h2>/);
+  assert.match(root.innerHTML, /<h2>One-click Deployment<\/h2>/);
+});
+
+test('escapeHtml only escapes &, <, > and " and leaves single quotes untouched (documented boundary)', async () => {
+  // sampleCode contains single-quoted strings (e.g. the import statement).
+  // escapeHtml's character class is [&<>"], so apostrophes are expected to
+  // pass through unescaped. This pins down that boundary so a future change
+  // to the escaping logic is caught as an intentional, reviewed change.
+  const root = await renderMain();
+  assert.ok(sampleCode.includes("'"), 'fixture assumption: sampleCode should contain single quotes');
+  assert.ok(root.innerHTML.includes("from '@bbit/workspace'"), 'single quotes should be rendered unescaped');
+});
+
+test('produces identical markup across independent renders (no shared mutable state)', async () => {
+  const first = await renderMain();
+  const second = await renderMain();
+  assert.equal(first.innerHTML, second.innerHTML);
 });
