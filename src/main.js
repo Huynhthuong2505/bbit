@@ -1,4 +1,8 @@
+import { inject } from '@vercel/analytics';
 import { providers, files, promptTemplates, plugins, deployTargets, modelComparison, sampleCode } from './workspace-data.js';
+
+// Initialize Vercel Web Analytics
+inject();
 
 const root = document.getElementById('root');
 
