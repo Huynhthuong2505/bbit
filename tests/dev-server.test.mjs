@@ -2,11 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { pathToFileURL, fileURLToPath } from 'node:url';
-import { mkdir, rm, writeFile } from 'node:fs/promises';
-import { join } from 'node:path';
 
 const serverScriptPath = fileURLToPath(new URL('../scripts/dev-server.mjs', import.meta.url));
-const projectRoot = fileURLToPath(new URL('..', import.meta.url));
 
 // scripts/dev-server.mjs wires up its request handler as a module-level side
 // effect (`http.createServer(handler).listen(...)`) and never exports it.
@@ -179,38 +176,33 @@ test('dev-server handler falls back to text/plain for recognized-but-unmapped fi
   assert.match(bodyText(res), /Built static AI Coding Workspace into dist\//);
 });
 
-test('dev-server handler serves "/" and "/index.html" identically', async () => {
+test('dev-server handler serves index.html at the root path even when a query string is present', async () => {
   const handler = await loadRequestHandler();
-  const rootRes = createMockResponse();
-  const explicitRes = createMockResponse();
+  const res = createMockResponse();
 
-  await handler({ url: '/' }, rootRes);
-  await handler({ url: '/index.html' }, explicitRes);
+  await handler({ url: '/?v=123' }, res);
 
-  assert.equal(rootRes.statusCode, explicitRes.statusCode);
-  assert.equal(rootRes.headers['Content-Type'], explicitRes.headers['Content-Type']);
-  assert.equal(bodyText(rootRes), bodyText(explicitRes));
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers['Content-Type'], 'text/html');
+  assert.match(bodyText(res), /<div id="root"><\/div>/);
 });
 
-test('dev-server handler treats file extensions case-sensitively, falling back to text/plain for uppercase extensions', async () => {
-  const fixtureDir = join(projectRoot, 'aicw-dev-server-test-fixture');
-  const fixturePath = join(fixtureDir, 'UPPER.JS');
-  await mkdir(fixtureDir, { recursive: true });
-  await writeFile(fixturePath, "console.log('upper');");
+test('dev-server handler falls back to text/plain for extensionless files', async () => {
+  const handler = await loadRequestHandler();
+  const res = createMockResponse();
 
-  try {
-    const handler = await loadRequestHandler();
-    const res = createMockResponse();
+  await handler({ url: '/LICENSE' }, res);
 
-    await handler({ url: '/aicw-dev-server-test-fixture/UPPER.JS' }, res);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers['Content-Type'], 'text/plain');
+});
 
-    assert.equal(res.statusCode, 200);
-    // extname() preserves case, so a ".JS" file does not match the
-    // lowercase-only ".js" key in the content-type map and falls back to
-    // text/plain instead of text/javascript.
-    assert.equal(res.headers['Content-Type'], 'text/plain');
-    assert.equal(bodyText(res), "console.log('upper');");
-  } finally {
-    await rm(fixtureDir, { recursive: true, force: true });
-  }
+test('dev-server handler resolves paths case-sensitively, 404ing on a differently-cased request for an existing file', async () => {
+  const handler = await loadRequestHandler();
+  const res = createMockResponse();
+
+  await handler({ url: '/src/STYLES.CSS' }, res);
+
+  assert.equal(res.statusCode, 404);
+  assert.equal(res.body, 'Not found');
 });

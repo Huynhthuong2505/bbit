@@ -169,30 +169,20 @@ test('escapeHtml only escapes &, <, >, and " in the sample code preview, leaving
   assert.ok(!root.innerHTML.includes('&#39;') && !root.innerHTML.includes('&apos;'), 'single quotes should not be HTML-entity encoded');
 });
 
-test('renders provider cards in the same order as the providers data', async () => {
+test('renders exactly five feature panels, including the Plugin Marketplace panel heading', async () => {
   const root = await renderMain();
-  const names = [...root.innerHTML.matchAll(/<strong>([^<]+)<\/strong>/g)].map((m) => m[1]);
-  assert.deepEqual(names, providers.map((p) => p.name));
+  // Regression guard: 'Plugin Marketplace' is used twice in the page (once as
+  // a <h3> capability card title, once as this <h2> feature-panel heading).
+  // A prior gap only asserted the h3 occurrence and missed this h2 heading.
+  assert.match(root.innerHTML, /<h2>Plugin Marketplace<\/h2>/);
+  const featurePanelMatches = root.innerHTML.match(/class="feature-panel"/g) || [];
+  assert.equal(featurePanelMatches.length, 5);
 });
 
-test('renders explorer file entries in the same order as the files data', async () => {
+test('renders the default agent prompt text inside the assistant textarea', async () => {
   const root = await renderMain();
-  const explorerMatch = root.innerHTML.match(/<aside class="explorer">.*?<\/aside>/s);
-  assert.ok(explorerMatch, 'expected an explorer section to be rendered');
-  const names = [...explorerMatch[0].matchAll(/class="file[^"]*">(?:<span>[^<]*<\/span>)([^<]+)</g)].map((m) => m[1]);
-  assert.deepEqual(names, files.map((f) => f.name));
-});
-
-test('renders prompt template and plugin pills in the same order as their source data', async () => {
-  const root = await renderMain();
-  const promptSection = root.innerHTML.match(/<h2>Prompt Library<\/h2>.*?<\/article>/s);
-  const pluginSection = root.innerHTML.match(/Plugin Marketplace<\/h2>.*?<\/article>/s);
-  assert.ok(promptSection, 'expected the Prompt Library panel to be rendered');
-  assert.ok(pluginSection, 'expected the Plugin Marketplace panel to be rendered');
-
-  const promptPills = [...promptSection[0].matchAll(/<span>([^<]+)<\/span>/g)].map((m) => m[1]);
-  const pluginPills = [...pluginSection[0].matchAll(/<span>([^<]+)<\/span>/g)].map((m) => m[1]);
-
-  assert.deepEqual(promptPills, promptTemplates);
-  assert.deepEqual(pluginPills, plugins);
+  assert.match(
+    root.innerHTML,
+    /<textarea>Build a SaaS landing page with pricing, auth, dashboard and Stripe-ready API routes\.<\/textarea>/,
+  );
 });

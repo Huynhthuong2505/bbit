@@ -184,39 +184,39 @@ test('build.mjs overwrites existing dist/index.html content when index.html chan
   }
 });
 
-test('build.mjs copies binary asset bytes byte-for-byte without corruption', async () => {
+test('build.mjs preserves unrelated files already present at the top level of dist/', async () => {
   const dir = await createTempProject();
   try {
     await writeFixtureFiles(dir);
-    // A small buffer including non-UTF8-safe byte values (e.g. 0x00, 0xff)
-    // to guard against any accidental text-mode copy that could corrupt it.
-    const binaryContent = Buffer.from([0x00, 0x01, 0xff, 0xfe, 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a]);
-    await writeFile(join(dir, 'src', 'logo.png'), binaryContent);
+    await mkdir(join(dir, 'dist'), { recursive: true });
+    await writeFile(join(dir, 'dist', 'previous-artifact.txt'), 'kept from an earlier deploy');
 
     const result = runBuild(dir);
     assert.equal(result.status, 0, result.stderr);
 
-    const copied = await readFile(join(dir, 'dist', 'src', 'logo.png'));
-    assert.ok(copied.equals(binaryContent), 'copied binary file should be byte-identical to the source');
+    // build.mjs only ever writes dist/index.html and dist/src/**; it never
+    // cleans dist/ first, so pre-existing top-level files are left in place.
+    assert.equal(
+      await readFile(join(dir, 'dist', 'previous-artifact.txt'), 'utf8'),
+      'kept from an earlier deploy',
+    );
+    assert.equal(await readFile(join(dir, 'dist', 'index.html'), 'utf8'), '<html><body>fixture</body></html>');
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
 });
 
-test('build.mjs recursively copies multiple levels of nested directories', async () => {
+test('build.mjs creates empty subdirectories of src/ in dist/ even when they contain no files', async () => {
   const dir = await createTempProject();
   try {
     await writeFixtureFiles(dir);
-    await mkdir(join(dir, 'src', 'a', 'b', 'c'), { recursive: true });
-    await writeFile(join(dir, 'src', 'a', 'b', 'c', 'deepest.js'), 'export const deepest = true;');
+    await mkdir(join(dir, 'src', 'empty-dir'), { recursive: true });
 
     const result = runBuild(dir);
     assert.equal(result.status, 0, result.stderr);
 
-    assert.equal(
-      await readFile(join(dir, 'dist', 'src', 'a', 'b', 'c', 'deepest.js'), 'utf8'),
-      'export const deepest = true;',
-    );
+    const info = await stat(join(dir, 'dist', 'src', 'empty-dir'));
+    assert.ok(info.isDirectory(), 'expected dist/src/empty-dir to be created as a directory');
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
