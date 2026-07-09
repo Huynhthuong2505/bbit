@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile, readdir } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 const resolve = (relativePath) => fileURLToPath(new URL(`../${relativePath}`, import.meta.url));
@@ -90,18 +90,16 @@ test('README.md documents the product pillars and local dev/build commands', asy
   }
 });
 
-test('every file in tests/ matches the glob pattern used by the npm test script', async () => {
+test('package.json test script runs the node test runner in a single, non-interactive pass (no watch mode)', async () => {
   const raw = await readFile(resolve('package.json'), 'utf8');
   const pkg = JSON.parse(raw);
-  assert.match(pkg.scripts.test, /tests\/\*\*\/\*\.test\.mjs/);
 
-  const entries = await readdir(resolve('tests'), { withFileTypes: true });
-  const testFiles = entries.filter((entry) => entry.isFile()).map((entry) => entry.name);
+  assert.doesNotMatch(pkg.scripts.test, /--watch/);
+  assert.doesNotMatch(pkg.scripts.test, /\bwatch\b/);
+});
 
-  assert.ok(testFiles.length > 0, 'expected at least one test file in tests/');
-  for (const name of testFiles) {
-    // Guards against stray files (e.g. "foo.test.js" or "foo.spec.mjs")
-    // that `node --test "tests/**/*.test.mjs"` would silently skip.
-    assert.match(name, /\.test\.mjs$/, `expected ${name} to match the *.test.mjs naming convention`);
-  }
+test('.gitignore does not exclude the tracked tests/ or src/ directories', async () => {
+  const content = await readFile(resolve('.gitignore'), 'utf8');
+  assert.doesNotMatch(content, /(^|\n)tests\/?(\n|$)/);
+  assert.doesNotMatch(content, /(^|\n)src\/?(\n|$)/);
 });

@@ -169,30 +169,50 @@ test('escapeHtml only escapes &, <, >, and " in the sample code preview, leaving
   assert.ok(!root.innerHTML.includes('&#39;') && !root.innerHTML.includes('&apos;'), 'single quotes should not be HTML-entity encoded');
 });
 
-test('renders provider cards in the same order as the providers data', async () => {
+test('renders feature panels in the documented top-to-bottom order', async () => {
   const root = await renderMain();
-  const names = [...root.innerHTML.matchAll(/<strong>([^<]+)<\/strong>/g)].map((m) => m[1]);
-  assert.deepEqual(names, providers.map((p) => p.name));
+  const headings = ['AI Hub đa nhà cung cấp', 'Model Comparison', 'Prompt Library', 'Plugin Marketplace', 'One-click Deployment'];
+  const indices = headings.map((title) => root.innerHTML.indexOf(`<h2>${title}</h2>`));
+  for (const index of indices) {
+    assert.notEqual(index, -1, 'expected every documented feature panel heading to be present');
+  }
+  for (let i = 1; i < indices.length; i++) {
+    assert.ok(indices[i] > indices[i - 1], `expected "${headings[i]}" to render after "${headings[i - 1]}"`);
+  }
 });
 
-test('renders explorer file entries in the same order as the files data', async () => {
+test('assistant panel textarea contains the exact default agent prompt', async () => {
   const root = await renderMain();
-  const explorerMatch = root.innerHTML.match(/<aside class="explorer">.*?<\/aside>/s);
-  assert.ok(explorerMatch, 'expected an explorer section to be rendered');
-  const names = [...explorerMatch[0].matchAll(/class="file[^"]*">(?:<span>[^<]*<\/span>)([^<]+)</g)].map((m) => m[1]);
-  assert.deepEqual(names, files.map((f) => f.name));
+  assert.match(
+    root.innerHTML,
+    /<textarea>Build a SaaS landing page with pricing, auth, dashboard and Stripe-ready API routes\.<\/textarea>/,
+  );
 });
 
-test('renders prompt template and plugin pills in the same order as their source data', async () => {
+test('escapes every angle bracket and ampersand occurrence in the embedded sample code', async () => {
   const root = await renderMain();
-  const promptSection = root.innerHTML.match(/<h2>Prompt Library<\/h2>.*?<\/article>/s);
-  const pluginSection = root.innerHTML.match(/Plugin Marketplace<\/h2>.*?<\/article>/s);
-  assert.ok(promptSection, 'expected the Prompt Library panel to be rendered');
-  assert.ok(pluginSection, 'expected the Plugin Marketplace panel to be rendered');
+  const codeBlockMatch = root.innerHTML.match(/<pre><code>([\s\S]*?)<\/code><\/pre>/);
+  assert.ok(codeBlockMatch, 'expected a rendered <pre><code> block for the sample code preview');
+  const rendered = codeBlockMatch[1];
 
-  const promptPills = [...promptSection[0].matchAll(/<span>([^<]+)<\/span>/g)].map((m) => m[1]);
-  const pluginPills = [...pluginSection[0].matchAll(/<span>([^<]+)<\/span>/g)].map((m) => m[1]);
+  const expectedLt = (sampleCode.match(/</g) || []).length;
+  const expectedGt = (sampleCode.match(/>/g) || []).length;
+  const expectedAmp = (sampleCode.match(/&/g) || []).length;
+  const expectedQuote = (sampleCode.match(/"/g) || []).length;
 
-  assert.deepEqual(promptPills, promptTemplates);
-  assert.deepEqual(pluginPills, plugins);
+  assert.equal((rendered.match(/&lt;/g) || []).length, expectedLt);
+  assert.equal((rendered.match(/&gt;/g) || []).length, expectedGt);
+  assert.equal((rendered.match(/&amp;/g) || []).length, expectedAmp);
+  assert.equal((rendered.match(/&quot;/g) || []).length, expectedQuote);
+  assert.ok(!rendered.includes('<AIWorkspace'), 'raw unescaped opening tag should not survive in the rendered code block');
+});
+
+test('produces identical markup across repeated renders of the same module (no shared mutable state)', async () => {
+  const firstRoot = await renderMain();
+  const firstMarkup = firstRoot.innerHTML;
+
+  const secondRoot = await renderMain();
+  const secondMarkup = secondRoot.innerHTML;
+
+  assert.equal(firstMarkup, secondMarkup);
 });

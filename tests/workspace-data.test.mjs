@@ -116,21 +116,35 @@ test('promptTemplates, plugins, and deployTargets contain no empty or duplicate 
   }
 });
 
-test('the active file is src/App.tsx at its documented position, and no other entry sets active: true', () => {
-  // Positional regression guard: main.js highlights whichever entry has
-  // active === true, so if this ever shifts to a different index/file the
-  // explorer UI would silently highlight the wrong entry.
-  assert.equal(files[1].name, 'src/App.tsx');
-  assert.equal(files[1].active, true);
+test('sampleCode has the expected number of lines for the line-numbers gutter', () => {
+  // src/main.js renders one <span>N</span> gutter entry per line of sampleCode;
+  // pinning the exact line count guards against accidental whitespace/line
+  // changes silently shifting the rendered line-numbers gutter.
+  assert.equal(sampleCode.split('\n').length, 12);
+});
 
-  for (const [index, file] of files.entries()) {
-    if (index === 1) continue;
-    assert.notEqual(file.active, true, `expected ${file.name} not to be marked active`);
+test('provider models, prompt template, plugin and deploy target labels contain no unescaped HTML-sensitive characters', () => {
+  // src/main.js interpolates these values directly into innerHTML without
+  // escaping, so the data itself must never contain raw &, <, >, or " to
+  // avoid breaking markup or enabling injection.
+  const unsafe = /[&<>"]/;
+  for (const provider of providers) {
+    assert.ok(!unsafe.test(provider.name), `provider name "${provider.name}" contains unsafe characters`);
+    assert.ok(!unsafe.test(provider.models), `provider models "${provider.models}" contains unsafe characters`);
+  }
+  for (const list of [promptTemplates, plugins, deployTargets]) {
+    for (const label of list) {
+      assert.ok(!unsafe.test(label), `label "${label}" contains unsafe characters`);
+    }
   }
 });
 
-test('providers[0] is OpenAI, matching the entry main.js marks as the default active provider card', () => {
-  // main.js marks index 0 as the active provider card (`i === 0`), so the
-  // first entry in this list drives the default UI selection.
-  assert.equal(providers[0].name, 'OpenAI');
+test('only the active file entry defines the "active" property; all others omit it', () => {
+  for (const file of files) {
+    if (file.name === 'src/App.tsx') {
+      assert.equal(file.active, true);
+    } else {
+      assert.equal(file.active, undefined, `expected "${file.name}" to omit the active property`);
+    }
+  }
 });

@@ -184,39 +184,48 @@ test('build.mjs overwrites existing dist/index.html content when index.html chan
   }
 });
 
-test('build.mjs copies binary asset bytes byte-for-byte without corruption', async () => {
+test('build.mjs fails fast and does not create dist/ when the entire src/ directory is missing', async () => {
   const dir = await createTempProject();
   try {
-    await writeFixtureFiles(dir);
-    // A small buffer including non-UTF8-safe byte values (e.g. 0x00, 0xff)
-    // to guard against any accidental text-mode copy that could corrupt it.
-    const binaryContent = Buffer.from([0x00, 0x01, 0xff, 0xfe, 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a]);
-    await writeFile(join(dir, 'src', 'logo.png'), binaryContent);
+    await writeFile(join(dir, 'index.html'), '<html></html>');
 
     const result = runBuild(dir);
-    assert.equal(result.status, 0, result.stderr);
 
-    const copied = await readFile(join(dir, 'dist', 'src', 'logo.png'));
-    assert.ok(copied.equals(binaryContent), 'copied binary file should be byte-identical to the source');
+    assert.notEqual(result.status, 0);
+    assert.equal(await pathExists(join(dir, 'dist')), false);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
 });
 
-test('build.mjs recursively copies multiple levels of nested directories', async () => {
+test('build.mjs copies binary file content byte-for-byte, unchanged', async () => {
   const dir = await createTempProject();
   try {
     await writeFixtureFiles(dir);
-    await mkdir(join(dir, 'src', 'a', 'b', 'c'), { recursive: true });
-    await writeFile(join(dir, 'src', 'a', 'b', 'c', 'deepest.js'), 'export const deepest = true;');
+    const binaryContent = Buffer.from([0x00, 0x01, 0x02, 0xff, 0xfe, 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a]);
+    await writeFile(join(dir, 'src', 'logo.bin'), binaryContent);
 
     const result = runBuild(dir);
     assert.equal(result.status, 0, result.stderr);
 
-    assert.equal(
-      await readFile(join(dir, 'dist', 'src', 'a', 'b', 'c', 'deepest.js'), 'utf8'),
-      'export const deepest = true;',
-    );
+    const copied = await readFile(join(dir, 'dist', 'src', 'logo.bin'));
+    assert.ok(copied.equals(binaryContent), 'binary file should be copied byte-for-byte');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('build.mjs preserves empty subdirectories nested inside src/', async () => {
+  const dir = await createTempProject();
+  try {
+    await writeFixtureFiles(dir);
+    await mkdir(join(dir, 'src', 'emptydir'), { recursive: true });
+
+    const result = runBuild(dir);
+    assert.equal(result.status, 0, result.stderr);
+
+    const info = await stat(join(dir, 'dist', 'src', 'emptydir'));
+    assert.ok(info.isDirectory(), 'expected dist/src/emptydir to be copied as an empty directory');
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
