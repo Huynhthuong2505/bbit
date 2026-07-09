@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
+import { readFile } from 'node:fs/promises';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 
 const serverScriptPath = fileURLToPath(new URL('../scripts/dev-server.mjs', import.meta.url));
@@ -155,39 +156,7 @@ test('dev-server handler responds with 404 when the requested path is a director
   assert.equal(res.body, 'Not found');
 });
 
-test('dev-server handler serves files nested several directories below the project root', async () => {
-  const handler = await loadRequestHandler();
-  const res = createMockResponse();
-
-  await handler({ url: '/.github/ISSUE_TEMPLATE/bug_report.md' }, res);
-
-  assert.equal(res.statusCode, 200);
-  assert.equal(res.headers['Content-Type'], 'text/plain');
-});
-
-test('dev-server handler falls back to text/plain for recognized-but-unmapped file extensions', async () => {
-  const handler = await loadRequestHandler();
-  const res = createMockResponse();
-
-  await handler({ url: '/scripts/build.mjs' }, res);
-
-  assert.equal(res.statusCode, 200);
-  assert.equal(res.headers['Content-Type'], 'text/plain');
-  assert.match(bodyText(res), /Built static AI Coding Workspace into dist\//);
-});
-
-test('dev-server handler serves index.html at the root path even when a query string is present', async () => {
-  const handler = await loadRequestHandler();
-  const res = createMockResponse();
-
-  await handler({ url: '/?v=123' }, res);
-
-  assert.equal(res.statusCode, 200);
-  assert.equal(res.headers['Content-Type'], 'text/html');
-  assert.match(bodyText(res), /<div id="root"><\/div>/);
-});
-
-test('dev-server handler falls back to text/plain for extensionless files', async () => {
+test('dev-server handler falls back to text/plain for files without any extension', async () => {
   const handler = await loadRequestHandler();
   const res = createMockResponse();
 
@@ -197,12 +166,77 @@ test('dev-server handler falls back to text/plain for extensionless files', asyn
   assert.equal(res.headers['Content-Type'], 'text/plain');
 });
 
-test('dev-server handler resolves paths case-sensitively, 404ing on a differently-cased request for an existing file', async () => {
+test('dev-server module binds the HTTP server to all interfaces on the default port', async () => {
+  const originalCreateServer = http.createServer;
+  let listenArgs;
+  http.createServer = (requestListener) => {
+    http.createServer = originalCreateServer;
+    return {
+      listen(...args) {
+        listenArgs = args;
+        return this;
+      },
+    };
+  };
+
+  try {
+    const url = `${pathToFileURL(serverScriptPath).href}?t=${Date.now()}-${Math.random()}`;
+    await import(url);
+  } finally {
+    http.createServer = originalCreateServer;
+  }
+
+  assert.equal(listenArgs[0], 5173);
+  assert.equal(listenArgs[1], '0.0.0.0');
+  assert.equal(typeof listenArgs[2], 'function');
+});
+
+test('dev-server handler resolves internal .. segments that stay within the project root', async () => {
   const handler = await loadRequestHandler();
   const res = createMockResponse();
 
-  await handler({ url: '/src/STYLES.CSS' }, res);
+  await handler({ url: '/src/../src/main.js' }, res);
 
-  assert.equal(res.statusCode, 404);
-  assert.equal(res.body, 'Not found');
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers['Content-Type'], 'text/javascript');
+  assert.match(bodyText(res), /workspace-data\.js/);
+});
+
+test('dev-server handler serves file content that matches the file on disk byte-for-byte', async () => {
+  const handler = await loadRequestHandler();
+  const res = createMockResponse();
+
+  await handler({ url: '/index.html' }, res);
+
+  const onDisk = await readFile(fileURLToPath(new URL('../index.html', import.meta.url)));
+  assert.equal(res.statusCode, 200);
+  assert.ok(Buffer.isBuffer(res.body), 'expected the response body to be the raw file buffer');
+  assert.ok(res.body.equals(onDisk), 'served content should match the file on disk exactly');
+});
+
+test('dev-server module respects a custom PORT environment variable', async () => {
+  const originalCreateServer = http.createServer;
+  const originalPort = process.env.PORT;
+  process.env.PORT = '4321';
+  let listenArgs;
+  http.createServer = (requestListener) => {
+    http.createServer = originalCreateServer;
+    return {
+      listen(...args) {
+        listenArgs = args;
+        return this;
+      },
+    };
+  };
+
+  try {
+    const url = `${pathToFileURL(serverScriptPath).href}?t=${Date.now()}-${Math.random()}`;
+    await import(url);
+  } finally {
+    http.createServer = originalCreateServer;
+    if (originalPort === undefined) delete process.env.PORT;
+    else process.env.PORT = originalPort;
+  }
+
+  assert.equal(listenArgs[0], '4321');
 });

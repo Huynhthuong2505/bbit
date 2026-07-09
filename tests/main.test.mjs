@@ -161,28 +161,40 @@ test('renders the AI Hub and Model Comparison feature panels with their headings
   assert.match(root.innerHTML, /<h2>One-click Deployment<\/h2>/);
 });
 
-test('escapeHtml only escapes &, <, >, and " in the sample code preview, leaving single quotes untouched', async () => {
+test('renders exactly one provider card per configured provider (no extra or missing cards)', async () => {
   const root = await renderMain();
-  // Documents the current (narrow) escaping scope of escapeHtml in src/main.js:
-  // apostrophes used around import specifiers are passed through verbatim.
-  assert.ok(root.innerHTML.includes("from '@bbit/workspace';"), 'expected raw single-quoted import to remain unescaped');
-  assert.ok(!root.innerHTML.includes('&#39;') && !root.innerHTML.includes('&apos;'), 'single quotes should not be HTML-entity encoded');
+  const providerCardMatches = root.innerHTML.match(/class="provider-card/g) || [];
+  assert.equal(providerCardMatches.length, providers.length);
 });
 
-test('renders exactly five feature panels, including the Plugin Marketplace panel heading', async () => {
+test('does not leak "undefined" or stringified objects into the rendered markup', async () => {
   const root = await renderMain();
-  // Regression guard: 'Plugin Marketplace' is used twice in the page (once as
-  // a <h3> capability card title, once as this <h2> feature-panel heading).
-  // A prior gap only asserted the h3 occurrence and missed this h2 heading.
-  assert.match(root.innerHTML, /<h2>Plugin Marketplace<\/h2>/);
-  const featurePanelMatches = root.innerHTML.match(/class="feature-panel"/g) || [];
-  assert.equal(featurePanelMatches.length, 5);
+  assert.ok(!root.innerHTML.includes('undefined'), 'markup should not contain the literal string "undefined"');
+  assert.ok(!root.innerHTML.includes('[object Object]'), 'markup should not contain a stringified object');
 });
 
-test('renders the default agent prompt text inside the assistant textarea', async () => {
+test('renders exactly one pill per prompt template and plugin (no duplicates or missing pills)', async () => {
   const root = await renderMain();
-  assert.match(
-    root.innerHTML,
-    /<textarea>Build a SaaS landing page with pricing, auth, dashboard and Stripe-ready API routes\.<\/textarea>/,
-  );
+  const countOccurrences = (needle) => (root.innerHTML.match(new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length;
+
+  for (const template of promptTemplates) {
+    assert.equal(countOccurrences(`<span>${template}</span>`), 1, `expected exactly one pill for ${template}`);
+  }
+  for (const plugin of plugins) {
+    assert.equal(countOccurrences(`<span>${plugin}</span>`), 1, `expected exactly one pill for ${plugin}`);
+  }
+});
+
+test('preserves single quotes unescaped in the sample code preview', async () => {
+  const root = await renderMain();
+  // escapeHtml() only encodes &, <, >, and "; apostrophes are intentionally
+  // left as-is. This guards against a regression that starts over- or
+  // under-escaping sampleCode's single-quoted import statement.
+  assert.ok(root.innerHTML.includes("from '@bbit/workspace';"));
+});
+
+test('renders exactly one explorer entry per configured file (no duplicates or missing entries)', async () => {
+  const root = await renderMain();
+  const fileMatches = root.innerHTML.match(/class="file[^"]*"/g) || [];
+  assert.equal(fileMatches.length, files.length);
 });

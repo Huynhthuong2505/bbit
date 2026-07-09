@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile, readdir } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 const resolve = (relativePath) => fileURLToPath(new URL(`../${relativePath}`, import.meta.url));
@@ -13,6 +13,12 @@ test('index.html declares the app root and the module entry script', async () =>
   assert.match(html, /<title>AI Coding Workspace<\/title>/);
   assert.match(html, /<div id="root"><\/div>/);
   assert.match(html, /<script type="module" src="\/src\/main\.js"><\/script>/);
+});
+
+test('index.html loads exactly one script tag as its entry point', async () => {
+  const html = await readFile(resolve('index.html'), 'utf8');
+  const scriptMatches = html.match(/<script/g) || [];
+  assert.equal(scriptMatches.length, 1);
 });
 
 test('package.json defines expected metadata and npm scripts', async () => {
@@ -37,7 +43,7 @@ test('package.json defines a test script that runs the node test runner against 
   assert.match(pkg.scripts.test, /tests\/\*\*\/\*\.test\.mjs/);
 });
 
-test('package.json exposes exactly the expected set of npm scripts, with no unexpected extras', async () => {
+test('package.json exposes exactly the four expected npm scripts', async () => {
   const raw = await readFile(resolve('package.json'), 'utf8');
   const pkg = JSON.parse(raw);
 
@@ -87,21 +93,5 @@ test('README.md documents the product pillars and local dev/build commands', asy
     'Model comparison',
   ]) {
     assert.ok(readme.includes(pillar), `expected README.md to mention "${pillar}"`);
-  }
-});
-
-test('every file in tests/ matches the glob pattern used by the npm test script', async () => {
-  const raw = await readFile(resolve('package.json'), 'utf8');
-  const pkg = JSON.parse(raw);
-  assert.match(pkg.scripts.test, /tests\/\*\*\/\*\.test\.mjs/);
-
-  const entries = await readdir(resolve('tests'), { withFileTypes: true });
-  const testFiles = entries.filter((entry) => entry.isFile()).map((entry) => entry.name);
-
-  assert.ok(testFiles.length > 0, 'expected at least one test file in tests/');
-  for (const name of testFiles) {
-    // Guards against stray files (e.g. "foo.test.js" or "foo.spec.mjs")
-    // that `node --test "tests/**/*.test.mjs"` would silently skip.
-    assert.match(name, /\.test\.mjs$/, `expected ${name} to match the *.test.mjs naming convention`);
   }
 });

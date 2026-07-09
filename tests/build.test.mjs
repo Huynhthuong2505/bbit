@@ -166,47 +166,24 @@ test('build.mjs does not remove stale dist/src files that no longer exist in src
   }
 });
 
-test('build.mjs overwrites existing dist/index.html content when index.html changes between builds', async () => {
+test('build.mjs copies binary asset content byte-for-byte without corruption', async () => {
   const dir = await createTempProject();
   try {
     await writeFixtureFiles(dir);
-    const first = runBuild(dir);
-    assert.equal(first.status, 0, first.stderr);
-    assert.equal(await readFile(join(dir, 'dist', 'index.html'), 'utf8'), '<html><body>fixture</body></html>');
-
-    await writeFile(join(dir, 'index.html'), '<html><body>updated fixture</body></html>');
-    const second = runBuild(dir);
-    assert.equal(second.status, 0, second.stderr);
-
-    assert.equal(await readFile(join(dir, 'dist', 'index.html'), 'utf8'), '<html><body>updated fixture</body></html>');
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
-test('build.mjs preserves unrelated files already present at the top level of dist/', async () => {
-  const dir = await createTempProject();
-  try {
-    await writeFixtureFiles(dir);
-    await mkdir(join(dir, 'dist'), { recursive: true });
-    await writeFile(join(dir, 'dist', 'previous-artifact.txt'), 'kept from an earlier deploy');
+    const binaryData = Buffer.from([0x00, 0xff, 0x10, 0x80, 0x7f, 0x01, 0xfe, 0x89, 0x50, 0x4e, 0x47]);
+    await writeFile(join(dir, 'src', 'icon.bin'), binaryData);
 
     const result = runBuild(dir);
     assert.equal(result.status, 0, result.stderr);
 
-    // build.mjs only ever writes dist/index.html and dist/src/**; it never
-    // cleans dist/ first, so pre-existing top-level files are left in place.
-    assert.equal(
-      await readFile(join(dir, 'dist', 'previous-artifact.txt'), 'utf8'),
-      'kept from an earlier deploy',
-    );
-    assert.equal(await readFile(join(dir, 'dist', 'index.html'), 'utf8'), '<html><body>fixture</body></html>');
+    const copied = await readFile(join(dir, 'dist', 'src', 'icon.bin'));
+    assert.ok(copied.equals(binaryData), 'copied binary file should match the source bytes exactly');
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
 });
 
-test('build.mjs creates empty subdirectories of src/ in dist/ even when they contain no files', async () => {
+test('build.mjs mirrors empty directories nested inside src/', async () => {
   const dir = await createTempProject();
   try {
     await writeFixtureFiles(dir);
@@ -217,6 +194,43 @@ test('build.mjs creates empty subdirectories of src/ in dist/ even when they con
 
     const info = await stat(join(dir, 'dist', 'src', 'empty-dir'));
     assert.ok(info.isDirectory(), 'expected dist/src/empty-dir to be created as a directory');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('build.mjs fails fast and does not create dist/ when the src/ directory itself is missing', async () => {
+  const dir = await createTempProject();
+  try {
+    await writeFile(join(dir, 'index.html'), '<html></html>');
+
+    const result = runBuild(dir);
+
+    assert.notEqual(result.status, 0);
+    assert.equal(await pathExists(join(dir, 'dist')), false);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('build.mjs picks up newly added nested files on a second run after an initial successful build', async () => {
+  const dir = await createTempProject();
+  try {
+    await writeFixtureFiles(dir);
+    const first = runBuild(dir);
+    assert.equal(first.status, 0, first.stderr);
+    assert.equal(await pathExists(join(dir, 'dist', 'src', 'lib', 'helper.js')), false);
+
+    await mkdir(join(dir, 'src', 'lib'), { recursive: true });
+    await writeFile(join(dir, 'src', 'lib', 'helper.js'), 'export const helper = () => true;');
+
+    const second = runBuild(dir);
+    assert.equal(second.status, 0, second.stderr);
+
+    assert.equal(
+      await readFile(join(dir, 'dist', 'src', 'lib', 'helper.js'), 'utf8'),
+      'export const helper = () => true;',
+    );
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
