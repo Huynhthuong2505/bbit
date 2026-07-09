@@ -161,18 +161,38 @@ test('renders the AI Hub and Model Comparison feature panels with their headings
   assert.match(root.innerHTML, /<h2>One-click Deployment<\/h2>/);
 });
 
-test('escapeHtml only escapes &, <, > and " and leaves single quotes untouched (documented boundary)', async () => {
-  // sampleCode contains single-quoted strings (e.g. the import statement).
-  // escapeHtml's character class is [&<>"], so apostrophes are expected to
-  // pass through unescaped. This pins down that boundary so a future change
-  // to the escaping logic is caught as an intentional, reviewed change.
+test('escapeHtml only escapes &, <, >, and " in the sample code preview, leaving single quotes untouched', async () => {
   const root = await renderMain();
-  assert.ok(sampleCode.includes("'"), 'fixture assumption: sampleCode should contain single quotes');
-  assert.ok(root.innerHTML.includes("from '@bbit/workspace'"), 'single quotes should be rendered unescaped');
+  // Documents the current (narrow) escaping scope of escapeHtml in src/main.js:
+  // apostrophes used around import specifiers are passed through verbatim.
+  assert.ok(root.innerHTML.includes("from '@bbit/workspace';"), 'expected raw single-quoted import to remain unescaped');
+  assert.ok(!root.innerHTML.includes('&#39;') && !root.innerHTML.includes('&apos;'), 'single quotes should not be HTML-entity encoded');
 });
 
-test('produces identical markup across independent renders (no shared mutable state)', async () => {
-  const first = await renderMain();
-  const second = await renderMain();
-  assert.equal(first.innerHTML, second.innerHTML);
+test('renders provider cards in the same order as the providers data', async () => {
+  const root = await renderMain();
+  const names = [...root.innerHTML.matchAll(/<strong>([^<]+)<\/strong>/g)].map((m) => m[1]);
+  assert.deepEqual(names, providers.map((p) => p.name));
+});
+
+test('renders explorer file entries in the same order as the files data', async () => {
+  const root = await renderMain();
+  const explorerMatch = root.innerHTML.match(/<aside class="explorer">.*?<\/aside>/s);
+  assert.ok(explorerMatch, 'expected an explorer section to be rendered');
+  const names = [...explorerMatch[0].matchAll(/class="file[^"]*">(?:<span>[^<]*<\/span>)([^<]+)</g)].map((m) => m[1]);
+  assert.deepEqual(names, files.map((f) => f.name));
+});
+
+test('renders prompt template and plugin pills in the same order as their source data', async () => {
+  const root = await renderMain();
+  const promptSection = root.innerHTML.match(/<h2>Prompt Library<\/h2>.*?<\/article>/s);
+  const pluginSection = root.innerHTML.match(/Plugin Marketplace<\/h2>.*?<\/article>/s);
+  assert.ok(promptSection, 'expected the Prompt Library panel to be rendered');
+  assert.ok(pluginSection, 'expected the Plugin Marketplace panel to be rendered');
+
+  const promptPills = [...promptSection[0].matchAll(/<span>([^<]+)<\/span>/g)].map((m) => m[1]);
+  const pluginPills = [...pluginSection[0].matchAll(/<span>([^<]+)<\/span>/g)].map((m) => m[1]);
+
+  assert.deepEqual(promptPills, promptTemplates);
+  assert.deepEqual(pluginPills, plugins);
 });

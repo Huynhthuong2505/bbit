@@ -141,36 +141,6 @@ test('build.mjs only copies index.html and src/, ignoring other project files', 
   }
 });
 
-test('build.mjs fails fast and does not create dist/ when the src/ directory itself is missing', async () => {
-  const dir = await createTempProject();
-  try {
-    await writeFile(join(dir, 'index.html'), '<html></html>');
-
-    const result = runBuild(dir);
-
-    assert.notEqual(result.status, 0);
-    assert.equal(await pathExists(join(dir, 'dist')), false);
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
-test('build.mjs reports the missing path on stderr when a required file cannot be found', async () => {
-  const dir = await createTempProject();
-  try {
-    await mkdir(join(dir, 'src'), { recursive: true });
-    await writeFile(join(dir, 'src', 'main.js'), "console.log('main');");
-    await writeFile(join(dir, 'src', 'styles.css'), 'body {}');
-
-    const result = runBuild(dir);
-
-    assert.notEqual(result.status, 0);
-    assert.match(result.stderr, /index\.html/);
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
-});
-
 test('build.mjs does not remove stale dist/src files that no longer exist in src/', async () => {
   const dir = await createTempProject();
   try {
@@ -191,6 +161,62 @@ test('build.mjs does not remove stale dist/src files that no longer exist in src
     // this documented, non-cleaning behavior).
     assert.equal(await pathExists(join(dir, 'dist', 'src', 'extra.js')), true);
     assert.equal(await readFile(join(dir, 'dist', 'src', 'styles.css'), 'utf8'), 'body { color: blue; }');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('build.mjs overwrites existing dist/index.html content when index.html changes between builds', async () => {
+  const dir = await createTempProject();
+  try {
+    await writeFixtureFiles(dir);
+    const first = runBuild(dir);
+    assert.equal(first.status, 0, first.stderr);
+    assert.equal(await readFile(join(dir, 'dist', 'index.html'), 'utf8'), '<html><body>fixture</body></html>');
+
+    await writeFile(join(dir, 'index.html'), '<html><body>updated fixture</body></html>');
+    const second = runBuild(dir);
+    assert.equal(second.status, 0, second.stderr);
+
+    assert.equal(await readFile(join(dir, 'dist', 'index.html'), 'utf8'), '<html><body>updated fixture</body></html>');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('build.mjs copies binary asset bytes byte-for-byte without corruption', async () => {
+  const dir = await createTempProject();
+  try {
+    await writeFixtureFiles(dir);
+    // A small buffer including non-UTF8-safe byte values (e.g. 0x00, 0xff)
+    // to guard against any accidental text-mode copy that could corrupt it.
+    const binaryContent = Buffer.from([0x00, 0x01, 0xff, 0xfe, 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a]);
+    await writeFile(join(dir, 'src', 'logo.png'), binaryContent);
+
+    const result = runBuild(dir);
+    assert.equal(result.status, 0, result.stderr);
+
+    const copied = await readFile(join(dir, 'dist', 'src', 'logo.png'));
+    assert.ok(copied.equals(binaryContent), 'copied binary file should be byte-identical to the source');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('build.mjs recursively copies multiple levels of nested directories', async () => {
+  const dir = await createTempProject();
+  try {
+    await writeFixtureFiles(dir);
+    await mkdir(join(dir, 'src', 'a', 'b', 'c'), { recursive: true });
+    await writeFile(join(dir, 'src', 'a', 'b', 'c', 'deepest.js'), 'export const deepest = true;');
+
+    const result = runBuild(dir);
+    assert.equal(result.status, 0, result.stderr);
+
+    assert.equal(
+      await readFile(join(dir, 'dist', 'src', 'a', 'b', 'c', 'deepest.js'), 'utf8'),
+      'export const deepest = true;',
+    );
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

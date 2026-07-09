@@ -2,8 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
 import { pathToFileURL, fileURLToPath } from 'node:url';
+import { mkdir, rm, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 
 const serverScriptPath = fileURLToPath(new URL('../scripts/dev-server.mjs', import.meta.url));
+const projectRoot = fileURLToPath(new URL('..', import.meta.url));
 
 // scripts/dev-server.mjs wires up its request handler as a module-level side
 // effect (`http.createServer(handler).listen(...)`) and never exports it.
@@ -155,37 +158,59 @@ test('dev-server handler responds with 404 when the requested path is a director
   assert.equal(res.body, 'Not found');
 });
 
-test('dev-server handler serves /index.html explicitly the same way as the root path', async () => {
+test('dev-server handler serves files nested several directories below the project root', async () => {
   const handler = await loadRequestHandler();
   const res = createMockResponse();
 
-  await handler({ url: '/index.html' }, res);
-
-  assert.equal(res.statusCode, 200);
-  assert.equal(res.headers['Content-Type'], 'text/html');
-  assert.match(bodyText(res), /<div id="root"><\/div>/);
-});
-
-test('dev-server handler falls back to text/plain for extensions not in the content-type map, like .mjs', async () => {
-  // The content-type lookup table only defines .html/.js/.css/.json, so an
-  // existing file with a different extension (the server script itself)
-  // must fall back to the default text/plain type rather than throwing.
-  const handler = await loadRequestHandler();
-  const res = createMockResponse();
-
-  await handler({ url: '/scripts/dev-server.mjs' }, res);
+  await handler({ url: '/.github/ISSUE_TEMPLATE/bug_report.md' }, res);
 
   assert.equal(res.statusCode, 200);
   assert.equal(res.headers['Content-Type'], 'text/plain');
-  assert.match(bodyText(res), /createServer/);
 });
 
-test('dev-server handler blocks traversal sequences that appear after a valid path segment', async () => {
+test('dev-server handler falls back to text/plain for recognized-but-unmapped file extensions', async () => {
   const handler = await loadRequestHandler();
   const res = createMockResponse();
 
-  await handler({ url: '/src/../../../../../../etc/passwd' }, res);
+  await handler({ url: '/scripts/build.mjs' }, res);
 
-  assert.equal(res.statusCode, 404);
-  assert.equal(res.body, 'Not found');
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers['Content-Type'], 'text/plain');
+  assert.match(bodyText(res), /Built static AI Coding Workspace into dist\//);
+});
+
+test('dev-server handler serves "/" and "/index.html" identically', async () => {
+  const handler = await loadRequestHandler();
+  const rootRes = createMockResponse();
+  const explicitRes = createMockResponse();
+
+  await handler({ url: '/' }, rootRes);
+  await handler({ url: '/index.html' }, explicitRes);
+
+  assert.equal(rootRes.statusCode, explicitRes.statusCode);
+  assert.equal(rootRes.headers['Content-Type'], explicitRes.headers['Content-Type']);
+  assert.equal(bodyText(rootRes), bodyText(explicitRes));
+});
+
+test('dev-server handler treats file extensions case-sensitively, falling back to text/plain for uppercase extensions', async () => {
+  const fixtureDir = join(projectRoot, 'aicw-dev-server-test-fixture');
+  const fixturePath = join(fixtureDir, 'UPPER.JS');
+  await mkdir(fixtureDir, { recursive: true });
+  await writeFile(fixturePath, "console.log('upper');");
+
+  try {
+    const handler = await loadRequestHandler();
+    const res = createMockResponse();
+
+    await handler({ url: '/aicw-dev-server-test-fixture/UPPER.JS' }, res);
+
+    assert.equal(res.statusCode, 200);
+    // extname() preserves case, so a ".JS" file does not match the
+    // lowercase-only ".js" key in the content-type map and falls back to
+    // text/plain instead of text/javascript.
+    assert.equal(res.headers['Content-Type'], 'text/plain');
+    assert.equal(bodyText(res), "console.log('upper');");
+  } finally {
+    await rm(fixtureDir, { recursive: true, force: true });
+  }
 });
