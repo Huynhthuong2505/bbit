@@ -38,6 +38,11 @@ describe('workspace-data providers', () => {
     const names = providers.map((provider) => provider.name);
     assert.equal(new Set(names).size, names.length);
   });
+
+  test('does not contain duplicate accent colors', () => {
+    const accents = providers.map((provider) => provider.accent);
+    assert.equal(new Set(accents).size, accents.length);
+  });
 });
 
 describe('workspace-data files', () => {
@@ -59,6 +64,19 @@ describe('workspace-data files', () => {
     const activeFiles = files.filter((file) => file.active === true);
     assert.equal(activeFiles.length, 1);
     assert.equal(activeFiles[0].name, 'src/App.tsx');
+  });
+
+  test('does not contain duplicate file names', () => {
+    const names = files.map((file) => file.name);
+    assert.equal(new Set(names).size, names.length);
+  });
+
+  test('leaves "active" undefined for entries that are not the active file', () => {
+    for (const file of files) {
+      if (file.name !== 'src/App.tsx') {
+        assert.equal(file.active, undefined);
+      }
+    }
   });
 });
 
@@ -139,5 +157,9 @@ describe('workspace-data sampleCode', () => {
   test('spans multiple lines', () => {
     const lines = sampleCode.split('\n');
     assert.ok(lines.length > 1);
+  });
+
+  test('does not contain a trailing newline', () => {
+    assert.ok(!sampleCode.endsWith('\n'));
   });
 });

@@ -1,7 +1,7 @@
 import { test, describe, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { mkdtemp, mkdir, writeFile, readFile, rm, access } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm, access, stat } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -106,6 +106,89 @@ describe('scripts/build.mjs against a scratch project', () => {
       const result = runBuild(tempDir);
 
       assert.notEqual(result.status, 0);
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test('overwrites dist/ content when a source file changes between builds', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'aicw-build-overwrite-'));
+    try {
+      await writeFile(join(tempDir, 'index.html'), '<html>v1</html>');
+      await mkdir(join(tempDir, 'src'), { recursive: true });
+      await writeFile(join(tempDir, 'src', 'main.js'), 'console.log("v1");');
+      await writeFile(join(tempDir, 'src', 'styles.css'), 'body { color: red; }');
+
+      let result = runBuild(tempDir);
+      assert.equal(result.status, 0);
+      assert.equal(await readFile(join(tempDir, 'dist', 'src', 'main.js'), 'utf8'), 'console.log("v1");');
+
+      await writeFile(join(tempDir, 'src', 'main.js'), 'console.log("v2");');
+      await writeFile(join(tempDir, 'index.html'), '<html>v2</html>');
+
+      result = runBuild(tempDir);
+      assert.equal(result.status, 0);
+      assert.equal(await readFile(join(tempDir, 'dist', 'src', 'main.js'), 'utf8'), 'console.log("v2");');
+      assert.equal(await readFile(join(tempDir, 'dist', 'index.html'), 'utf8'), '<html>v2</html>');
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test('does not remove stale files from dist/ that no longer exist in src/ (copyDir never cleans the target)', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'aicw-build-stale-'));
+    try {
+      await writeFile(join(tempDir, 'index.html'), '<html></html>');
+      await mkdir(join(tempDir, 'src'), { recursive: true });
+      await writeFile(join(tempDir, 'src', 'main.js'), '// main');
+      await writeFile(join(tempDir, 'src', 'styles.css'), 'body {}');
+      await writeFile(join(tempDir, 'src', 'stale.js'), '// will be removed from src');
+
+      let result = runBuild(tempDir);
+      assert.equal(result.status, 0);
+      await access(join(tempDir, 'dist', 'src', 'stale.js'));
+
+      await rm(join(tempDir, 'src', 'stale.js'));
+      result = runBuild(tempDir);
+      assert.equal(result.status, 0);
+
+      // build.mjs only copies forward; it never deletes files already present
+      // in dist/, so the stale artifact from the previous build persists.
+      await access(join(tempDir, 'dist', 'src', 'stale.js'));
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test('fails with a non-zero exit code when src/main.js is missing', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'aicw-build-no-main-'));
+    try {
+      await writeFile(join(tempDir, 'index.html'), '<html></html>');
+      await mkdir(join(tempDir, 'src'), { recursive: true });
+      await writeFile(join(tempDir, 'src', 'styles.css'), 'body {}');
+
+      const result = runBuild(tempDir);
+
+      assert.notEqual(result.status, 0);
+      await assert.rejects(access(join(tempDir, 'dist')));
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  test('copies an empty nested directory under src/ into dist/', async () => {
+    const tempDir = await mkdtemp(join(tmpdir(), 'aicw-build-empty-dir-'));
+    try {
+      await writeFile(join(tempDir, 'index.html'), '<html></html>');
+      await mkdir(join(tempDir, 'src', 'empty'), { recursive: true });
+      await writeFile(join(tempDir, 'src', 'main.js'), '// main');
+      await writeFile(join(tempDir, 'src', 'styles.css'), 'body {}');
+
+      const result = runBuild(tempDir);
+
+      assert.equal(result.status, 0);
+      const stats = await stat(join(tempDir, 'dist', 'src', 'empty'));
+      assert.ok(stats.isDirectory());
     } finally {
       await rm(tempDir, { recursive: true, force: true });
     }

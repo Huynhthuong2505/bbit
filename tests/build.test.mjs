@@ -108,38 +108,89 @@ test('build.mjs is idempotent when dist/ already exists from a previous run', as
   }
 });
 
-test('build.mjs does not prune stale files left over in dist/src from a previous build', async () => {
+test('build.mjs fails fast and does not create dist/ when src/main.js is missing', async () => {
   const dir = await createTempProject();
   try {
-    await writeFixtureFiles(dir);
-    await writeFile(join(dir, 'src', 'old.js'), "console.log('old');");
+    await writeFile(join(dir, 'index.html'), '<html></html>');
+    await mkdir(join(dir, 'src'), { recursive: true });
+    await writeFile(join(dir, 'src', 'styles.css'), 'body {}');
 
-    const first = runBuild(dir);
-    assert.equal(first.status, 0, first.stderr);
-    assert.equal(await readFile(join(dir, 'dist', 'src', 'old.js'), 'utf8'), "console.log('old');");
+    const result = runBuild(dir);
 
-    await rm(join(dir, 'src', 'old.js'));
-    const second = runBuild(dir);
-    assert.equal(second.status, 0, second.stderr);
-
-    // Regression/boundary check: copyDir only copies, it never removes files
-    // that disappeared from the source tree, so the stale artifact from the
-    // first build is expected to still be present in dist/.
-    assert.equal(await pathExists(join(dir, 'dist', 'src', 'old.js')), true);
+    assert.notEqual(result.status, 0);
+    assert.equal(await pathExists(join(dir, 'dist')), false);
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
 });
 
-test('build.mjs fails when dist already exists as a regular file instead of a directory', async () => {
+test('build.mjs only copies index.html and src/, ignoring other project files', async () => {
   const dir = await createTempProject();
   try {
     await writeFixtureFiles(dir);
-    await writeFile(join(dir, 'dist'), 'not a directory');
+    await writeFile(join(dir, 'package.json'), '{"name":"fixture"}');
+    await writeFile(join(dir, 'README.md'), '# fixture');
+
+    const result = runBuild(dir);
+    assert.equal(result.status, 0, result.stderr);
+
+    assert.equal(await pathExists(join(dir, 'dist', 'package.json')), false);
+    assert.equal(await pathExists(join(dir, 'dist', 'README.md')), false);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('build.mjs fails fast and does not create dist/ when the src/ directory itself is missing', async () => {
+  const dir = await createTempProject();
+  try {
+    await writeFile(join(dir, 'index.html'), '<html></html>');
 
     const result = runBuild(dir);
 
     assert.notEqual(result.status, 0);
+    assert.equal(await pathExists(join(dir, 'dist')), false);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('build.mjs reports the missing path on stderr when a required file cannot be found', async () => {
+  const dir = await createTempProject();
+  try {
+    await mkdir(join(dir, 'src'), { recursive: true });
+    await writeFile(join(dir, 'src', 'main.js'), "console.log('main');");
+    await writeFile(join(dir, 'src', 'styles.css'), 'body {}');
+
+    const result = runBuild(dir);
+
+    assert.notEqual(result.status, 0);
+    assert.match(result.stderr, /index\.html/);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('build.mjs does not remove stale dist/src files that no longer exist in src/', async () => {
+  const dir = await createTempProject();
+  try {
+    await writeFixtureFiles(dir);
+    await writeFile(join(dir, 'src', 'extra.js'), "console.log('extra');");
+    const first = runBuild(dir);
+    assert.equal(first.status, 0, first.stderr);
+    assert.equal(await pathExists(join(dir, 'dist', 'src', 'extra.js')), true);
+
+    await rm(join(dir, 'src', 'extra.js'));
+    await writeFile(join(dir, 'src', 'styles.css'), 'body { color: blue; }');
+
+    const second = runBuild(dir);
+    assert.equal(second.status, 0, second.stderr);
+
+    // build.mjs copies files but never prunes dist/, so previously built
+    // files that were removed from src/ remain behind (regression guard for
+    // this documented, non-cleaning behavior).
+    assert.equal(await pathExists(join(dir, 'dist', 'src', 'extra.js')), true);
+    assert.equal(await readFile(join(dir, 'dist', 'src', 'styles.css'), 'utf8'), 'body { color: blue; }');
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

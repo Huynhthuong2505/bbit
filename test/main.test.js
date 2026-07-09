@@ -150,3 +150,43 @@ describe('main.js marketplace section', () => {
     }
   });
 });
+
+describe('main.js feature panel headings', () => {
+  test('renders the heading for every feature panel section', () => {
+    const headings = [
+      'AI Hub đa nhà cung cấp',
+      'Model Comparison',
+      'Prompt Library',
+      'Plugin Marketplace',
+      'One-click Deployment',
+    ];
+    for (const heading of headings) {
+      assert.ok(html.includes(`<h2>${heading}</h2>`), `expected html to include heading ${heading}`);
+    }
+  });
+});
+
+describe('main.js editor tabs and terminal footer', () => {
+  test('renders the editor tab labels', () => {
+    assert.ok(html.includes('<span>App.tsx</span>'));
+    assert.ok(html.includes('<span>runner.ts</span>'));
+    assert.ok(html.includes('<span>models.ts</span>'));
+  });
+
+  test('renders the terminal footer with the build command and reload status', () => {
+    assert.ok(html.includes('npm run build'));
+    assert.ok(html.includes('preview reloaded'));
+  });
+});
+
+describe('main.js single-active-item invariants', () => {
+  test('marks exactly one file as active in the explorer', () => {
+    const matches = html.match(/class="file active"/g) || [];
+    assert.equal(matches.length, 1);
+  });
+
+  test('marks exactly one provider card as active', () => {
+    const matches = html.match(/class="provider-card active"/g) || [];
+    assert.equal(matches.length, 1);
+  });
+});
