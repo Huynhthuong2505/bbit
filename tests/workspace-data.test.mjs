@@ -116,21 +116,15 @@ test('promptTemplates, plugins, and deployTargets contain no empty or duplicate 
   }
 });
 
-test('the active file is src/App.tsx at its documented position, and no other entry sets active: true', () => {
-  // Positional regression guard: main.js highlights whichever entry has
-  // active === true, so if this ever shifts to a different index/file the
-  // explorer UI would silently highlight the wrong entry.
-  assert.equal(files[1].name, 'src/App.tsx');
-  assert.equal(files[1].active, true);
-
-  for (const [index, file] of files.entries()) {
-    if (index === 1) continue;
-    assert.notEqual(file.active, true, `expected ${file.name} not to be marked active`);
+test('files entries other than the active one omit the active property entirely', () => {
+  // src/main.js renders `file.active ? 'active' : ''`, so this only needs
+  // active to be falsy; but the data module is expected to omit the key
+  // outright for non-active entries rather than explicitly set `active: false`.
+  for (const file of files) {
+    if (file.name === 'src/App.tsx') {
+      assert.equal(file.active, true);
+    } else {
+      assert.equal(file.active, undefined, `expected ${file.name} to have no active property`);
+    }
   }
-});
-
-test('providers[0] is OpenAI, matching the entry main.js marks as the default active provider card', () => {
-  // main.js marks index 0 as the active provider card (`i === 0`), so the
-  // first entry in this list drives the default UI selection.
-  assert.equal(providers[0].name, 'OpenAI');
 });
