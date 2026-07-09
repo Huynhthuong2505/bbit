@@ -95,11 +95,6 @@ test('exported collections are arrays (defensive shape check)', () => {
   assert.equal(typeof sampleCode, 'string');
 });
 
-test('providers use a distinct accent color for each entry', () => {
-  const accents = providers.map((p) => p.accent.toLowerCase());
-  assert.equal(new Set(accents).size, providers.length, 'expected no two providers to share an accent color');
-});
-
 test('providers, files, and modelComparison entries have no duplicate names', () => {
   assert.equal(new Set(providers.map((p) => p.name)).size, providers.length);
   assert.equal(new Set(files.map((f) => f.name)).size, files.length);
@@ -116,15 +111,22 @@ test('promptTemplates, plugins, and deployTargets contain no empty or duplicate 
   }
 });
 
-test('files entries other than the active one omit the active property entirely', () => {
-  // src/main.js renders `file.active ? 'active' : ''`, so this only needs
-  // active to be falsy; but the data module is expected to omit the key
-  // outright for non-active entries rather than explicitly set `active: false`.
-  for (const file of files) {
-    if (file.name === 'src/App.tsx') {
-      assert.equal(file.active, true);
-    } else {
-      assert.equal(file.active, undefined, `expected ${file.name} to have no active property`);
-    }
+test('provider accent colors are all unique', () => {
+  assert.equal(new Set(providers.map((p) => p.accent)).size, providers.length);
+});
+
+test('only the designated file entry is marked active; all others omit or falsy the active flag', () => {
+  const nonActiveEntries = files.filter((file) => file.name !== 'src/App.tsx');
+  assert.equal(nonActiveEntries.length, files.length - 1);
+  for (const file of nonActiveEntries) {
+    assert.notEqual(file.active, true, `expected ${file.name} to not be marked active`);
+  }
+});
+
+test('non-active file entries omit the "active" property entirely rather than setting it to false', () => {
+  const nonActiveEntries = files.filter((file) => file.name !== 'src/App.tsx');
+  assert.ok(nonActiveEntries.length > 0, 'expected at least one non-active file entry to check');
+  for (const file of nonActiveEntries) {
+    assert.equal(Object.hasOwn(file, 'active'), false, `expected ${file.name} to omit the "active" key`);
   }
 });

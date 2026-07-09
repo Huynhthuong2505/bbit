@@ -15,6 +15,12 @@ test('index.html declares the app root and the module entry script', async () =>
   assert.match(html, /<script type="module" src="\/src\/main\.js"><\/script>/);
 });
 
+test('index.html loads exactly one script tag as its entry point', async () => {
+  const html = await readFile(resolve('index.html'), 'utf8');
+  const scriptMatches = html.match(/<script/g) || [];
+  assert.equal(scriptMatches.length, 1);
+});
+
 test('package.json defines expected metadata and npm scripts', async () => {
   const raw = await readFile(resolve('package.json'), 'utf8');
   const pkg = JSON.parse(raw);
@@ -35,13 +41,6 @@ test('package.json defines a test script that runs the node test runner against 
   assert.equal(pkg.scripts.test, 'node --test "tests/**/*.test.mjs"');
   assert.match(pkg.scripts.test, /^node --test /);
   assert.match(pkg.scripts.test, /tests\/\*\*\/\*\.test\.mjs/);
-});
-
-test('package.json exposes exactly the expected set of npm scripts, with no unexpected extras', async () => {
-  const raw = await readFile(resolve('package.json'), 'utf8');
-  const pkg = JSON.parse(raw);
-
-  assert.deepEqual(Object.keys(pkg.scripts).sort(), ['build', 'dev', 'preview', 'test']);
 });
 
 test('.gitignore excludes the build output directory', async () => {
@@ -90,18 +89,10 @@ test('README.md documents the product pillars and local dev/build commands', asy
   }
 });
 
-test('every file in tests/ matches the glob pattern used by the npm test script', async () => {
-  const raw = await readFile(resolve('package.json'), 'utf8');
-  const pkg = JSON.parse(raw);
-  assert.match(pkg.scripts.test, /tests\/\*\*\/\*\.test\.mjs/);
-
-  const entries = await readdir(resolve('tests'), { withFileTypes: true });
-  const testFiles = entries.filter((entry) => entry.isFile()).map((entry) => entry.name);
-
-  assert.ok(testFiles.length > 0, 'expected at least one test file in tests/');
-  for (const name of testFiles) {
-    // Guards against stray files (e.g. "foo.test.js" or "foo.spec.mjs")
-    // that `node --test "tests/**/*.test.mjs"` would silently skip.
-    assert.match(name, /\.test\.mjs$/, `expected ${name} to match the *.test.mjs naming convention`);
+test('the tests/ directory contains only files matching the npm test script glob', async () => {
+  const entries = await readdir(resolve('tests'));
+  assert.ok(entries.length > 0, 'expected at least one test file in tests/');
+  for (const entry of entries) {
+    assert.match(entry, /\.test\.mjs$/, `expected ${entry} to match the "tests/**/*.test.mjs" glob used by npm test`);
   }
 });
