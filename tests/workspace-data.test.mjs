@@ -1,5 +1,6 @@
-import { test } from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
+
 import {
   providers,
   files,
@@ -10,84 +11,126 @@ import {
   sampleCode,
 } from '../src/workspace-data.js';
 
-test('providers contains 8 unique entries with name, models and a hex accent color', () => {
+test('providers lists all supported AI providers with accent colors', () => {
   assert.equal(providers.length, 8);
-  const names = providers.map((p) => p.name);
-  assert.equal(new Set(names).size, names.length, 'provider names should be unique');
+  assert.deepEqual(
+    providers.map((p) => p.name),
+    ['OpenAI', 'Anthropic', 'Google AI', 'OpenRouter', 'Groq', 'DeepSeek', 'Mistral AI', 'Ollama'],
+  );
   for (const provider of providers) {
     assert.equal(typeof provider.name, 'string');
-    assert.ok(provider.name.length > 0);
     assert.equal(typeof provider.models, 'string');
-    assert.ok(provider.models.length > 0);
-    assert.match(provider.accent, /^#[0-9a-f]{6}$/i, `accent "${provider.accent}" should be a hex color`);
+    assert.match(provider.accent, /^#[0-9a-f]{6}$/i);
   }
 });
 
-test('providers includes the documented AI providers', () => {
-  const names = providers.map((p) => p.name);
-  assert.deepEqual(names, [
-    'OpenAI',
-    'Anthropic',
-    'Google AI',
-    'OpenRouter',
-    'Groq',
-    'DeepSeek',
-    'Mistral AI',
-    'Ollama',
-  ]);
-});
-
-test('files lists exactly one active file (App.tsx)', () => {
+test('files lists workspace explorer entries with exactly one active file', () => {
   assert.equal(files.length, 6);
-  const active = files.filter((file) => file.active);
-  assert.equal(active.length, 1);
-  assert.equal(active[0].name, 'src/App.tsx');
   for (const file of files) {
     assert.equal(typeof file.name, 'string');
     assert.equal(typeof file.icon, 'string');
   }
+  const activeFiles = files.filter((file) => file.active === true);
+  assert.equal(activeFiles.length, 1);
+  assert.equal(activeFiles[0].name, 'src/App.tsx');
 });
 
-test('promptTemplates is a list of unique, non-empty strings', () => {
-  assert.equal(promptTemplates.length, 8);
-  assert.equal(new Set(promptTemplates).size, promptTemplates.length);
-  for (const template of promptTemplates) {
-    assert.equal(typeof template, 'string');
-    assert.ok(template.length > 0);
-  }
-  assert.ok(promptTemplates.includes('Landing Page'));
-  assert.ok(promptTemplates.includes('Ecommerce'));
+test('promptTemplates contains the marketplace template pills', () => {
+  assert.deepEqual(promptTemplates, [
+    'Landing Page',
+    'Dashboard',
+    'SaaS',
+    'AI Chatbot',
+    'CRM',
+    'ERP',
+    'Portfolio',
+    'Ecommerce',
+  ]);
 });
 
-test('plugins is a list of unique, non-empty strings', () => {
-  assert.equal(plugins.length, 9);
-  assert.equal(new Set(plugins).size, plugins.length);
-  assert.ok(plugins.includes('GitHub'));
-  assert.ok(plugins.includes('SSH'));
+test('plugins contains the marketplace integration pills', () => {
+  assert.deepEqual(plugins, [
+    'GitHub',
+    'Docker',
+    'Supabase',
+    'Firebase',
+    'Vercel',
+    'Cloudflare',
+    'Figma',
+    'Database',
+    'SSH',
+  ]);
 });
 
-test('deployTargets matches the documented deployment providers', () => {
+test('deployTargets contains the supported deployment providers', () => {
   assert.deepEqual(deployTargets, ['Vercel', 'Netlify', 'Cloudflare Workers']);
 });
 
-test('modelComparison has a model and summary for each entry', () => {
+test('modelComparison summarizes results for each compared model', () => {
   assert.equal(modelComparison.length, 3);
-  for (const entry of modelComparison) {
-    assert.equal(typeof entry.model, 'string');
-    assert.ok(entry.model.length > 0);
-    assert.equal(typeof entry.summary, 'string');
-    assert.ok(entry.summary.length > 0);
-  }
   assert.deepEqual(
     modelComparison.map((entry) => entry.model),
     ['Claude 4', 'GPT-5.5', 'Gemini 2.5 Pro'],
   );
+  for (const entry of modelComparison) {
+    assert.equal(typeof entry.summary, 'string');
+    assert.ok(entry.summary.length > 0);
+  }
 });
 
-test('sampleCode is a non-empty string with the expected shape', () => {
-  assert.equal(typeof sampleCode, 'string');
-  assert.match(sampleCode, /^import \{ AIWorkspace \} from '@bbit\/workspace';/);
+test('sampleCode is a well-formed JSX snippet referencing the AIWorkspace component', () => {
+  assert.match(sampleCode, /import \{ AIWorkspace \} from '@bbit\/workspace';/);
   assert.match(sampleCode, /<AIWorkspace/);
-  assert.match(sampleCode, /editor="monaco"/);
-  assert.equal(sampleCode.split('\n').length, 12);
+  assert.match(sampleCode, /export default function App/);
+
+  const openBraces = (sampleCode.match(/\{/g) || []).length;
+  const closeBraces = (sampleCode.match(/\}/g) || []).length;
+  assert.equal(openBraces, closeBraces, 'sampleCode should have balanced curly braces');
+});
+
+test('exported collections are arrays (defensive shape check)', () => {
+  for (const value of [providers, files, promptTemplates, plugins, deployTargets, modelComparison]) {
+    assert.ok(Array.isArray(value));
+  }
+  assert.equal(typeof sampleCode, 'string');
+});
+
+test('providers use a distinct accent color for each entry', () => {
+  const accents = providers.map((p) => p.accent.toLowerCase());
+  assert.equal(new Set(accents).size, providers.length, 'expected no two providers to share an accent color');
+});
+
+test('providers, files, and modelComparison entries have no duplicate names', () => {
+  assert.equal(new Set(providers.map((p) => p.name)).size, providers.length);
+  assert.equal(new Set(files.map((f) => f.name)).size, files.length);
+  assert.equal(new Set(modelComparison.map((m) => m.model)).size, modelComparison.length);
+});
+
+test('promptTemplates, plugins, and deployTargets contain no empty or duplicate pill labels', () => {
+  for (const list of [promptTemplates, plugins, deployTargets]) {
+    assert.equal(new Set(list).size, list.length, 'expected no duplicate pill labels');
+    for (const label of list) {
+      assert.equal(typeof label, 'string');
+      assert.ok(label.trim().length > 0, 'pill label should not be empty');
+    }
+  }
+});
+
+test('the active file is src/App.tsx at its documented position, and no other entry sets active: true', () => {
+  // Positional regression guard: main.js highlights whichever entry has
+  // active === true, so if this ever shifts to a different index/file the
+  // explorer UI would silently highlight the wrong entry.
+  assert.equal(files[1].name, 'src/App.tsx');
+  assert.equal(files[1].active, true);
+
+  for (const [index, file] of files.entries()) {
+    if (index === 1) continue;
+    assert.notEqual(file.active, true, `expected ${file.name} not to be marked active`);
+  }
+});
+
+test('providers[0] is OpenAI, matching the entry main.js marks as the default active provider card', () => {
+  // main.js marks index 0 as the active provider card (`i === 0`), so the
+  // first entry in this list drives the default UI selection.
+  assert.equal(providers[0].name, 'OpenAI');
 });

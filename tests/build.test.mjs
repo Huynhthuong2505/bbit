@@ -1,106 +1,223 @@
-import { test } from 'node:test';
+import test from 'node:test';
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { mkdtemp, mkdir, rm, readFile, stat, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { execFileSync } from 'node:child_process';
 
-const repoRoot = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
-const buildScript = path.join(repoRoot, 'scripts/build.mjs');
+const buildScript = fileURLToPath(new URL('../scripts/build.mjs', import.meta.url));
 
-function makeTempDir() {
-  return fs.mkdtempSync(path.join(os.tmpdir(), 'aicw-build-'));
+async function createTempProject() {
+  return mkdtemp(join(tmpdir(), 'aicw-build-'));
+}
+
+async function writeFixtureFiles(dir) {
+  await writeFile(join(dir, 'index.html'), '<html><body>fixture</body></html>');
+  await mkdir(join(dir, 'src'), { recursive: true });
+  await writeFile(join(dir, 'src', 'main.js'), "console.log('main');");
+  await writeFile(join(dir, 'src', 'styles.css'), 'body { color: red; }');
 }
 
 function runBuild(cwd) {
-  return execFileSync(process.execPath, [buildScript], { cwd, encoding: 'utf8' });
+  return spawnSync(process.execPath, [buildScript], { cwd, encoding: 'utf8' });
 }
 
-test('copies index.html and the src directory into dist/', () => {
-  const tmpDir = makeTempDir();
+async function pathExists(path) {
+  return stat(path).then(() => true).catch(() => false);
+}
+
+test('build.mjs copies index.html and src assets into dist/', async () => {
+  const dir = await createTempProject();
   try {
-    fs.copyFileSync(path.join(repoRoot, 'index.html'), path.join(tmpDir, 'index.html'));
-    fs.cpSync(path.join(repoRoot, 'src'), path.join(tmpDir, 'src'), { recursive: true });
+    await writeFixtureFiles(dir);
+    const result = runBuild(dir);
 
-    const output = runBuild(tmpDir);
+    assert.equal(result.status, 0, result.stderr);
+    assert.match(result.stdout, /Built static AI Coding Workspace into dist\//);
 
-    assert.match(output, /Built static AI Coding Workspace into dist\//);
+    assert.equal(await readFile(join(dir, 'dist', 'index.html'), 'utf8'), '<html><body>fixture</body></html>');
+    assert.equal(await readFile(join(dir, 'dist', 'src', 'main.js'), 'utf8'), "console.log('main');");
+    assert.equal(await readFile(join(dir, 'dist', 'src', 'styles.css'), 'utf8'), 'body { color: red; }');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('build.mjs recursively copies nested directories inside src/', async () => {
+  const dir = await createTempProject();
+  try {
+    await writeFixtureFiles(dir);
+    await mkdir(join(dir, 'src', 'nested'), { recursive: true });
+    await writeFile(join(dir, 'src', 'nested', 'deep.js'), 'export const deep = true;');
+
+    const result = runBuild(dir);
+    assert.equal(result.status, 0, result.stderr);
+
+    assert.equal(await readFile(join(dir, 'dist', 'src', 'nested', 'deep.js'), 'utf8'), 'export const deep = true;');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('build.mjs fails fast and does not create dist/ when index.html is missing', async () => {
+  const dir = await createTempProject();
+  try {
+    await mkdir(join(dir, 'src'), { recursive: true });
+    await writeFile(join(dir, 'src', 'main.js'), "console.log('main');");
+    await writeFile(join(dir, 'src', 'styles.css'), 'body {}');
+
+    const result = runBuild(dir);
+
+    assert.notEqual(result.status, 0);
+    assert.equal(await pathExists(join(dir, 'dist')), false);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('build.mjs fails fast when src/styles.css is missing', async () => {
+  const dir = await createTempProject();
+  try {
+    await writeFile(join(dir, 'index.html'), '<html></html>');
+    await mkdir(join(dir, 'src'), { recursive: true });
+    await writeFile(join(dir, 'src', 'main.js'), "console.log('main');");
+
+    const result = runBuild(dir);
+
+    assert.notEqual(result.status, 0);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('build.mjs is idempotent when dist/ already exists from a previous run', async () => {
+  const dir = await createTempProject();
+  try {
+    await writeFixtureFiles(dir);
+    const first = runBuild(dir);
+    assert.equal(first.status, 0, first.stderr);
+
+    await writeFile(join(dir, 'src', 'main.js'), "console.log('updated');");
+    const second = runBuild(dir);
+    assert.equal(second.status, 0, second.stderr);
+
+    assert.equal(await readFile(join(dir, 'dist', 'src', 'main.js'), 'utf8'), "console.log('updated');");
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('build.mjs fails fast and does not create dist/ when src/main.js is missing', async () => {
+  const dir = await createTempProject();
+  try {
+    await writeFile(join(dir, 'index.html'), '<html></html>');
+    await mkdir(join(dir, 'src'), { recursive: true });
+    await writeFile(join(dir, 'src', 'styles.css'), 'body {}');
+
+    const result = runBuild(dir);
+
+    assert.notEqual(result.status, 0);
+    assert.equal(await pathExists(join(dir, 'dist')), false);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('build.mjs only copies index.html and src/, ignoring other project files', async () => {
+  const dir = await createTempProject();
+  try {
+    await writeFixtureFiles(dir);
+    await writeFile(join(dir, 'package.json'), '{"name":"fixture"}');
+    await writeFile(join(dir, 'README.md'), '# fixture');
+
+    const result = runBuild(dir);
+    assert.equal(result.status, 0, result.stderr);
+
+    assert.equal(await pathExists(join(dir, 'dist', 'package.json')), false);
+    assert.equal(await pathExists(join(dir, 'dist', 'README.md')), false);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('build.mjs does not remove stale dist/src files that no longer exist in src/', async () => {
+  const dir = await createTempProject();
+  try {
+    await writeFixtureFiles(dir);
+    await writeFile(join(dir, 'src', 'extra.js'), "console.log('extra');");
+    const first = runBuild(dir);
+    assert.equal(first.status, 0, first.stderr);
+    assert.equal(await pathExists(join(dir, 'dist', 'src', 'extra.js')), true);
+
+    await rm(join(dir, 'src', 'extra.js'));
+    await writeFile(join(dir, 'src', 'styles.css'), 'body { color: blue; }');
+
+    const second = runBuild(dir);
+    assert.equal(second.status, 0, second.stderr);
+
+    // build.mjs copies files but never prunes dist/, so previously built
+    // files that were removed from src/ remain behind (regression guard for
+    // this documented, non-cleaning behavior).
+    assert.equal(await pathExists(join(dir, 'dist', 'src', 'extra.js')), true);
+    assert.equal(await readFile(join(dir, 'dist', 'src', 'styles.css'), 'utf8'), 'body { color: blue; }');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('build.mjs overwrites existing dist/index.html content when index.html changes between builds', async () => {
+  const dir = await createTempProject();
+  try {
+    await writeFixtureFiles(dir);
+    const first = runBuild(dir);
+    assert.equal(first.status, 0, first.stderr);
+    assert.equal(await readFile(join(dir, 'dist', 'index.html'), 'utf8'), '<html><body>fixture</body></html>');
+
+    await writeFile(join(dir, 'index.html'), '<html><body>updated fixture</body></html>');
+    const second = runBuild(dir);
+    assert.equal(second.status, 0, second.stderr);
+
+    assert.equal(await readFile(join(dir, 'dist', 'index.html'), 'utf8'), '<html><body>updated fixture</body></html>');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('build.mjs copies binary asset bytes byte-for-byte without corruption', async () => {
+  const dir = await createTempProject();
+  try {
+    await writeFixtureFiles(dir);
+    // A small buffer including non-UTF8-safe byte values (e.g. 0x00, 0xff)
+    // to guard against any accidental text-mode copy that could corrupt it.
+    const binaryContent = Buffer.from([0x00, 0x01, 0xff, 0xfe, 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a]);
+    await writeFile(join(dir, 'src', 'logo.png'), binaryContent);
+
+    const result = runBuild(dir);
+    assert.equal(result.status, 0, result.stderr);
+
+    const copied = await readFile(join(dir, 'dist', 'src', 'logo.png'));
+    assert.ok(copied.equals(binaryContent), 'copied binary file should be byte-identical to the source');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('build.mjs recursively copies multiple levels of nested directories', async () => {
+  const dir = await createTempProject();
+  try {
+    await writeFixtureFiles(dir);
+    await mkdir(join(dir, 'src', 'a', 'b', 'c'), { recursive: true });
+    await writeFile(join(dir, 'src', 'a', 'b', 'c', 'deepest.js'), 'export const deepest = true;');
+
+    const result = runBuild(dir);
+    assert.equal(result.status, 0, result.stderr);
+
     assert.equal(
-      fs.readFileSync(path.join(tmpDir, 'dist', 'index.html'), 'utf8'),
-      fs.readFileSync(path.join(repoRoot, 'index.html'), 'utf8'),
-    );
-    for (const file of ['main.js', 'styles.css', 'workspace-data.js']) {
-      assert.equal(
-        fs.readFileSync(path.join(tmpDir, 'dist', 'src', file), 'utf8'),
-        fs.readFileSync(path.join(repoRoot, 'src', file), 'utf8'),
-        `expected dist/src/${file} to match the source file`,
-      );
-    }
-  } finally {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-  }
-});
-
-test('recursively copies nested directories inside src/', () => {
-  const tmpDir = makeTempDir();
-  try {
-    fs.copyFileSync(path.join(repoRoot, 'index.html'), path.join(tmpDir, 'index.html'));
-    fs.cpSync(path.join(repoRoot, 'src'), path.join(tmpDir, 'src'), { recursive: true });
-    fs.mkdirSync(path.join(tmpDir, 'src', 'nested'));
-    fs.writeFileSync(path.join(tmpDir, 'src', 'nested', 'extra.txt'), 'nested-content');
-
-    runBuild(tmpDir);
-
-    assert.equal(
-      fs.readFileSync(path.join(tmpDir, 'dist', 'src', 'nested', 'extra.txt'), 'utf8'),
-      'nested-content',
+      await readFile(join(dir, 'dist', 'src', 'a', 'b', 'c', 'deepest.js'), 'utf8'),
+      'export const deepest = true;',
     );
   } finally {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-  }
-});
-
-test('overwrites an existing dist/ directory on rebuild', () => {
-  const tmpDir = makeTempDir();
-  try {
-    fs.copyFileSync(path.join(repoRoot, 'index.html'), path.join(tmpDir, 'index.html'));
-    fs.cpSync(path.join(repoRoot, 'src'), path.join(tmpDir, 'src'), { recursive: true });
-
-    runBuild(tmpDir);
-    fs.writeFileSync(path.join(tmpDir, 'src', 'main.js'), '// changed');
-    runBuild(tmpDir);
-
-    assert.equal(fs.readFileSync(path.join(tmpDir, 'dist', 'src', 'main.js'), 'utf8'), '// changed');
-  } finally {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-  }
-});
-
-test('fails without creating dist/ when index.html is missing', () => {
-  const tmpDir = makeTempDir();
-  try {
-    fs.mkdirSync(path.join(tmpDir, 'src'));
-    fs.writeFileSync(path.join(tmpDir, 'src', 'main.js'), '');
-    fs.writeFileSync(path.join(tmpDir, 'src', 'styles.css'), '');
-
-    assert.throws(() => execFileSync(process.execPath, [buildScript], { cwd: tmpDir, stdio: 'pipe' }));
-    assert.equal(fs.existsSync(path.join(tmpDir, 'dist')), false);
-  } finally {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
-  }
-});
-
-test('fails when required src files are missing', () => {
-  const tmpDir = makeTempDir();
-  try {
-    fs.copyFileSync(path.join(repoRoot, 'index.html'), path.join(tmpDir, 'index.html'));
-    fs.mkdirSync(path.join(tmpDir, 'src'));
-    // Intentionally omit src/main.js and src/styles.css.
-
-    assert.throws(() => execFileSync(process.execPath, [buildScript], { cwd: tmpDir, stdio: 'pipe' }));
-    assert.equal(fs.existsSync(path.join(tmpDir, 'dist')), false);
-  } finally {
-    fs.rmSync(tmpDir, { recursive: true, force: true });
+    await rm(dir, { recursive: true, force: true });
   }
 });

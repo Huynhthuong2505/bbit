@@ -1,5 +1,7 @@
-import { test } from 'node:test';
+import test, { afterEach } from 'node:test';
 import assert from 'node:assert/strict';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
 import {
   providers,
   files,
@@ -10,110 +12,187 @@ import {
   sampleCode,
 } from '../src/workspace-data.js';
 
-// src/main.js renders its markup as a side effect at import time by writing to
-// `document.getElementById('root').innerHTML`. We stub out the minimal DOM
-// surface it touches so the module can be imported under plain Node.
-let capturedHTML = '';
-const getElementByIdCalls = [];
+const mainScriptPath = fileURLToPath(new URL('../src/main.js', import.meta.url));
 
-globalThis.document = {
-  getElementById(id) {
-    getElementByIdCalls.push(id);
-    return {
-      set innerHTML(value) {
-        capturedHTML = value;
-      },
-      get innerHTML() {
-        return capturedHTML;
-      },
-    };
-  },
-};
+// src/main.js is a script with a module-level side effect: it grabs
+// document.getElementById('root') and sets its innerHTML. There is no DOM
+// available under node:test, so we stub the minimal `document` API the
+// script relies on and re-import the module fresh for each test (a unique
+// query string forces Node's ESM loader to re-evaluate the module).
+function stubDocument(rootExists = true) {
+  const rootElement = { innerHTML: '' };
+  globalThis.document = {
+    getElementById(id) {
+      if (id === 'root' && rootExists) return rootElement;
+      return null;
+    },
+  };
+  return rootElement;
+}
 
-await import('../src/main.js');
+async function renderMain(rootExists = true) {
+  const rootElement = stubDocument(rootExists);
+  const url = `${pathToFileURL(mainScriptPath).href}?t=${Date.now()}-${Math.random()}`;
+  await import(url);
+  return rootElement;
+}
 
-test('looks up the #root element exactly once', () => {
-  assert.deepEqual(getElementByIdCalls, ['root']);
+afterEach(() => {
+  delete globalThis.document;
 });
 
-test('renders the top level app shell and hero copy', () => {
-  assert.match(capturedHTML, /<main class="app-shell">/);
-  assert.match(capturedHTML, /✦ AI Coding Workspace/);
-  assert.match(capturedHTML, /<button>Docs<\/button>/);
-  assert.match(capturedHTML, /🐙 Sign in GitHub/);
-  assert.match(capturedHTML, /▶ Start workspace/);
-  assert.match(capturedHTML, /▥ Compare models/);
+test('renders the hero brand, headline and call-to-actions', async () => {
+  const root = await renderMain();
+  assert.match(root.innerHTML, /AI Coding Workspace/);
+  assert.match(root.innerHTML, /class="hero-grid"/);
+  assert.match(root.innerHTML, /Start workspace/);
+  assert.match(root.innerHTML, /Compare models/);
 });
 
-test('renders every provider from workspace-data with the first marked active', () => {
+test('renders a provider card for every configured provider with exactly one active', async () => {
+  const root = await renderMain();
   for (const provider of providers) {
-    assert.ok(
-      capturedHTML.includes(`<strong>${provider.name}</strong><span>${provider.models}</span>`),
-      `expected provider card for ${provider.name}`,
-    );
-    assert.ok(capturedHTML.includes(`--accent:${provider.accent}`));
+    assert.ok(root.innerHTML.includes(`<strong>${provider.name}</strong>`), `missing card for ${provider.name}`);
+    assert.ok(root.innerHTML.includes(provider.models));
+    assert.ok(root.innerHTML.includes(`--accent:${provider.accent}`));
   }
-  const firstCardMarkup = `<button class="provider-card active" style="--accent:${providers[0].accent}">`;
-  assert.ok(capturedHTML.includes(firstCardMarkup));
-  const secondCardMarkup = `<button class="provider-card " style="--accent:${providers[1].accent}">`;
-  assert.ok(capturedHTML.includes(secondCardMarkup));
+  const activeCount = (root.innerHTML.match(/provider-card active/g) || []).length;
+  assert.equal(activeCount, 1, 'exactly the first provider should be marked active');
 });
 
-test('renders every file in the explorer, marking the active file', () => {
+test('renders the explorer file list with only the active file highlighted', async () => {
+  const root = await renderMain();
   for (const file of files) {
-    const expectedClass = `file ${file.active ? 'active' : ''}`;
-    assert.ok(
-      capturedHTML.includes(`<div class="${expectedClass}"><span>${file.icon}</span>${file.name}</div>`),
-      `expected explorer entry for ${file.name}`,
-    );
+    assert.ok(root.innerHTML.includes(file.name), `missing explorer entry for ${file.name}`);
+  }
+  const activeFileMatches = root.innerHTML.match(/class="file active"/g) || [];
+  assert.equal(activeFileMatches.length, 1);
+});
+
+test('renders the model comparison grid for every compared model', async () => {
+  const root = await renderMain();
+  for (const entry of modelComparison) {
+    assert.ok(root.innerHTML.includes(`<h4>${entry.model}</h4>`));
+    assert.ok(root.innerHTML.includes(entry.summary));
   }
 });
 
-test('renders prompt templates and plugins as pills', () => {
+test('renders prompt templates and plugins as pill rows', async () => {
+  const root = await renderMain();
   for (const template of promptTemplates) {
-    assert.ok(capturedHTML.includes(`<span>${template}</span>`), `missing prompt template pill: ${template}`);
+    assert.ok(root.innerHTML.includes(`<span>${template}</span>`), `missing prompt template pill ${template}`);
   }
   for (const plugin of plugins) {
-    assert.ok(capturedHTML.includes(`<span>${plugin}</span>`), `missing plugin pill: ${plugin}`);
+    assert.ok(root.innerHTML.includes(`<span>${plugin}</span>`), `missing plugin pill ${plugin}`);
   }
 });
 
-test('renders deploy targets with a checkmark', () => {
+test('renders every deploy target as a checked deploy item', async () => {
+  const root = await renderMain();
   for (const target of deployTargets) {
-    assert.ok(capturedHTML.includes(`<div class="deploy-item">✅ ${target}</div>`));
+    assert.ok(root.innerHTML.includes(`<div class="deploy-item">\u2705 ${target}</div>`));
   }
 });
 
-test('renders model comparison entries', () => {
-  for (const entry of modelComparison) {
-    assert.ok(capturedHTML.includes(`<h4>${entry.model}</h4><p>${entry.summary}</p>`));
-  }
-});
-
-test('renders the six product capabilities', () => {
-  const expectedTitles = [
+test('renders all six capability cards with their titles', async () => {
+  const root = await renderMain();
+  const capabilityMatches = root.innerHTML.match(/class="capability"/g) || [];
+  assert.equal(capabilityMatches.length, 6);
+  for (const title of [
     'Monaco Editor',
     'AI Chat',
     'Agent Mode',
     'GitHub Workflow',
     'Live Preview',
     'Plugin Marketplace',
-  ];
-  for (const title of expectedTitles) {
-    assert.match(capturedHTML, new RegExp(`<h3>${title}</h3>`));
+  ]) {
+    assert.ok(root.innerHTML.includes(`<h3>${title}</h3>`), `missing capability title ${title}`);
   }
 });
 
-test('renders one line-number span per line of sample code', () => {
-  const lineCount = sampleCode.split('\n').length;
-  const spanCount = (capturedHTML.match(/<div class="line-numbers">.*?<\/div>/s)?.[0].match(/<span>/g) || []).length;
-  assert.equal(spanCount, lineCount);
+test('escapes HTML-sensitive characters in the sample code preview', async () => {
+  const root = await renderMain();
+  assert.ok(!root.innerHTML.includes(sampleCode), 'raw unescaped sample code should not be embedded');
+  assert.ok(root.innerHTML.includes('&lt;AIWorkspace'));
+  assert.ok(root.innerHTML.includes('/&gt;'));
+  assert.ok(root.innerHTML.includes('&quot;openai&quot;'));
 });
 
-test('escapes HTML-sensitive characters in the sample code preview', () => {
-  assert.ok(capturedHTML.includes('&lt;AIWorkspace'));
-  assert.ok(capturedHTML.includes('editor=&quot;monaco&quot;'));
-  assert.ok(capturedHTML.includes('/&gt;'));
-  // The raw, unescaped tag must never appear in the output.
-  assert.ok(!capturedHTML.includes('<AIWorkspace'));
+test('renders exactly one line-number span per line of sample code', async () => {
+  const root = await renderMain();
+  const expectedLines = sampleCode.split('\n').length;
+  const lineNumberMatches = root.innerHTML.match(/<span>\d+<\/span>/g) || [];
+  assert.equal(lineNumberMatches.length, expectedLines);
+});
+
+test('renders the agent panel with the default agent prompt and log entries', async () => {
+  const root = await renderMain();
+  assert.ok(root.innerHTML.includes('AI Agent'));
+  assert.ok(root.innerHTML.includes('Run agent'));
+  assert.ok(root.innerHTML.includes('Creating folders'));
+  assert.ok(root.innerHTML.includes('Committing Git'));
+});
+
+test('throws when the #root element is missing from the document', async () => {
+  await assert.rejects(() => renderMain(false));
+});
+
+test('renders the top navigation bar with docs and sign-in actions', async () => {
+  const root = await renderMain();
+  assert.match(root.innerHTML, /class="topbar"/);
+  assert.match(root.innerHTML, /<button>Docs<\/button>/);
+  assert.match(root.innerHTML, /Sign in GitHub/);
+});
+
+test('renders the workspace preview with activity bar, editor tabs and terminal', async () => {
+  const root = await renderMain();
+  assert.match(root.innerHTML, /class="workspace-card"/);
+  assert.match(root.innerHTML, /class="activity-bar"/);
+  assert.match(root.innerHTML, /<span>App\.tsx<\/span><span>runner\.ts<\/span><span>models\.ts<\/span>/);
+  assert.match(root.innerHTML, /class="terminal"/);
+  assert.match(root.innerHTML, /npm run build/);
+});
+
+test('renders the AI Hub and Model Comparison feature panels with their headings', async () => {
+  const root = await renderMain();
+  assert.match(root.innerHTML, /<h2>AI Hub đa nhà cung cấp<\/h2>/);
+  assert.match(root.innerHTML, /<h2>Model Comparison<\/h2>/);
+  assert.match(root.innerHTML, /<h2>Prompt Library<\/h2>/);
+  assert.match(root.innerHTML, /<h2>One-click Deployment<\/h2>/);
+});
+
+test('escapeHtml only escapes &, <, >, and " in the sample code preview, leaving single quotes untouched', async () => {
+  const root = await renderMain();
+  // Documents the current (narrow) escaping scope of escapeHtml in src/main.js:
+  // apostrophes used around import specifiers are passed through verbatim.
+  assert.ok(root.innerHTML.includes("from '@bbit/workspace';"), 'expected raw single-quoted import to remain unescaped');
+  assert.ok(!root.innerHTML.includes('&#39;') && !root.innerHTML.includes('&apos;'), 'single quotes should not be HTML-entity encoded');
+});
+
+test('renders provider cards in the same order as the providers data', async () => {
+  const root = await renderMain();
+  const names = [...root.innerHTML.matchAll(/<strong>([^<]+)<\/strong>/g)].map((m) => m[1]);
+  assert.deepEqual(names, providers.map((p) => p.name));
+});
+
+test('renders explorer file entries in the same order as the files data', async () => {
+  const root = await renderMain();
+  const explorerMatch = root.innerHTML.match(/<aside class="explorer">.*?<\/aside>/s);
+  assert.ok(explorerMatch, 'expected an explorer section to be rendered');
+  const names = [...explorerMatch[0].matchAll(/class="file[^"]*">(?:<span>[^<]*<\/span>)([^<]+)</g)].map((m) => m[1]);
+  assert.deepEqual(names, files.map((f) => f.name));
+});
+
+test('renders prompt template and plugin pills in the same order as their source data', async () => {
+  const root = await renderMain();
+  const promptSection = root.innerHTML.match(/<h2>Prompt Library<\/h2>.*?<\/article>/s);
+  const pluginSection = root.innerHTML.match(/Plugin Marketplace<\/h2>.*?<\/article>/s);
+  assert.ok(promptSection, 'expected the Prompt Library panel to be rendered');
+  assert.ok(pluginSection, 'expected the Plugin Marketplace panel to be rendered');
+
+  const promptPills = [...promptSection[0].matchAll(/<span>([^<]+)<\/span>/g)].map((m) => m[1]);
+  const pluginPills = [...pluginSection[0].matchAll(/<span>([^<]+)<\/span>/g)].map((m) => m[1]);
+
+  assert.deepEqual(promptPills, promptTemplates);
+  assert.deepEqual(pluginPills, plugins);
 });
