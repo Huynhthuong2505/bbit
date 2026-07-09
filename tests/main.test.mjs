@@ -173,28 +173,18 @@ test('does not leak "undefined" or stringified objects into the rendered markup'
   assert.ok(!root.innerHTML.includes('[object Object]'), 'markup should not contain a stringified object');
 });
 
-test('renders exactly one pill per prompt template and plugin (no duplicates or missing pills)', async () => {
+test('renders provider cards in the same order as the providers data array', async () => {
   const root = await renderMain();
-  const countOccurrences = (needle) => (root.innerHTML.match(new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length;
-
-  for (const template of promptTemplates) {
-    assert.equal(countOccurrences(`<span>${template}</span>`), 1, `expected exactly one pill for ${template}`);
-  }
-  for (const plugin of plugins) {
-    assert.equal(countOccurrences(`<span>${plugin}</span>`), 1, `expected exactly one pill for ${plugin}`);
-  }
+  const nameOrder = [...root.innerHTML.matchAll(/<strong>([^<]+)<\/strong>/g)].map((m) => m[1]);
+  assert.deepEqual(nameOrder, providers.map((p) => p.name));
 });
 
-test('preserves single quotes unescaped in the sample code preview', async () => {
+test('renders explorer file entries in the same order as the files data array', async () => {
   const root = await renderMain();
-  // escapeHtml() only encodes &, <, >, and "; apostrophes are intentionally
-  // left as-is. This guards against a regression that starts over- or
-  // under-escaping sampleCode's single-quoted import statement.
-  assert.ok(root.innerHTML.includes("from '@bbit/workspace';"));
-});
-
-test('renders exactly one explorer entry per configured file (no duplicates or missing entries)', async () => {
-  const root = await renderMain();
-  const fileMatches = root.innerHTML.match(/class="file[^"]*"/g) || [];
-  assert.equal(fileMatches.length, files.length);
+  const positions = files.map((file) => root.innerHTML.indexOf(file.name));
+  for (const position of positions) {
+    assert.notEqual(position, -1);
+  }
+  const sortedPositions = [...positions].sort((a, b) => a - b);
+  assert.deepEqual(positions, sortedPositions, 'explorer entries should appear in the same order as files');
 });

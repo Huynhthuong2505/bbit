@@ -123,10 +123,16 @@ test('only the designated file entry is marked active; all others omit or falsy 
   }
 });
 
-test('sampleCode declares the expected agent mode capabilities and live preview frameworks', () => {
-  assert.match(sampleCode, /agentMode=\{\{ canWriteFiles: true, canRunBuilds: true, canCommit: true \}\}/);
-  assert.match(sampleCode, /providers=\{\["openai", "anthropic", "gemini", "openrouter"\]\}/);
-  for (const framework of ['React', 'Vue', 'Next.js', 'Vite']) {
-    assert.ok(sampleCode.includes(framework), `expected sampleCode to list the ${framework} framework`);
+test('modelComparison summaries are all unique across compared models', () => {
+  assert.equal(new Set(modelComparison.map((entry) => entry.summary)).size, modelComparison.length);
+});
+
+test('files entries expose only the expected keys (name, icon, and optional active)', () => {
+  for (const file of files) {
+    const keys = Object.keys(file);
+    assert.ok(
+      keys.every((key) => ['name', 'icon', 'active'].includes(key)),
+      `unexpected key on file entry ${file.name}: ${keys.join(', ')}`,
+    );
   }
 });

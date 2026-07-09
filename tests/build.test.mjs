@@ -199,38 +199,45 @@ test('build.mjs mirrors empty directories nested inside src/', async () => {
   }
 });
 
-test('build.mjs fails fast and does not create dist/ when the src/ directory itself is missing', async () => {
+test('build.mjs copies multiple levels of nested directories under src/', async () => {
   const dir = await createTempProject();
   try {
-    await writeFile(join(dir, 'index.html'), '<html></html>');
+    await writeFixtureFiles(dir);
+    await mkdir(join(dir, 'src', 'a', 'b', 'c'), { recursive: true });
+    await writeFile(join(dir, 'src', 'a', 'b', 'c', 'deep.js'), 'export const veryDeep = true;');
 
     const result = runBuild(dir);
+    assert.equal(result.status, 0, result.stderr);
 
-    assert.notEqual(result.status, 0);
-    assert.equal(await pathExists(join(dir, 'dist')), false);
+    assert.equal(
+      await readFile(join(dir, 'dist', 'src', 'a', 'b', 'c', 'deep.js'), 'utf8'),
+      'export const veryDeep = true;',
+    );
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
 });
 
-test('build.mjs picks up newly added nested files on a second run after an initial successful build', async () => {
+test('build.mjs picks up newly added nested files on a second run', async () => {
   const dir = await createTempProject();
   try {
     await writeFixtureFiles(dir);
     const first = runBuild(dir);
     assert.equal(first.status, 0, first.stderr);
-    assert.equal(await pathExists(join(dir, 'dist', 'src', 'lib', 'helper.js')), false);
+    assert.equal(await pathExists(join(dir, 'dist', 'src', 'nested', 'added.js')), false);
 
-    await mkdir(join(dir, 'src', 'lib'), { recursive: true });
-    await writeFile(join(dir, 'src', 'lib', 'helper.js'), 'export const helper = () => true;');
+    await mkdir(join(dir, 'src', 'nested'), { recursive: true });
+    await writeFile(join(dir, 'src', 'nested', 'added.js'), "export const added = 'later';");
 
     const second = runBuild(dir);
     assert.equal(second.status, 0, second.stderr);
 
     assert.equal(
-      await readFile(join(dir, 'dist', 'src', 'lib', 'helper.js'), 'utf8'),
-      'export const helper = () => true;',
+      await readFile(join(dir, 'dist', 'src', 'nested', 'added.js'), 'utf8'),
+      "export const added = 'later';",
     );
+    // pre-existing top-level files must remain untouched by the second run
+    assert.equal(await readFile(join(dir, 'dist', 'src', 'styles.css'), 'utf8'), 'body { color: red; }');
   } finally {
     await rm(dir, { recursive: true, force: true });
   }

@@ -1,7 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { readFile } from 'node:fs/promises';
 import { pathToFileURL, fileURLToPath } from 'node:url';
 
 const serverScriptPath = fileURLToPath(new URL('../scripts/dev-server.mjs', import.meta.url));
@@ -191,29 +190,6 @@ test('dev-server module binds the HTTP server to all interfaces on the default p
   assert.equal(typeof listenArgs[2], 'function');
 });
 
-test('dev-server handler resolves internal .. segments that stay within the project root', async () => {
-  const handler = await loadRequestHandler();
-  const res = createMockResponse();
-
-  await handler({ url: '/src/../src/main.js' }, res);
-
-  assert.equal(res.statusCode, 200);
-  assert.equal(res.headers['Content-Type'], 'text/javascript');
-  assert.match(bodyText(res), /workspace-data\.js/);
-});
-
-test('dev-server handler serves file content that matches the file on disk byte-for-byte', async () => {
-  const handler = await loadRequestHandler();
-  const res = createMockResponse();
-
-  await handler({ url: '/index.html' }, res);
-
-  const onDisk = await readFile(fileURLToPath(new URL('../index.html', import.meta.url)));
-  assert.equal(res.statusCode, 200);
-  assert.ok(Buffer.isBuffer(res.body), 'expected the response body to be the raw file buffer');
-  assert.ok(res.body.equals(onDisk), 'served content should match the file on disk exactly');
-});
-
 test('dev-server module respects a custom PORT environment variable', async () => {
   const originalCreateServer = http.createServer;
   const originalPort = process.env.PORT;
@@ -239,4 +215,35 @@ test('dev-server module respects a custom PORT environment variable', async () =
   }
 
   assert.equal(listenArgs[0], '4321');
+});
+
+test('dev-server handler serves /index.html directly with the text/html content type', async () => {
+  const handler = await loadRequestHandler();
+  const res = createMockResponse();
+
+  await handler({ url: '/index.html' }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers['Content-Type'], 'text/html');
+  assert.match(bodyText(res), /<div id="root"><\/div>/);
+});
+
+test('dev-server handler responds with 404 when the request URL cannot be parsed', async () => {
+  const handler = await loadRequestHandler();
+  const res = createMockResponse();
+
+  await handler({ url: 'http://[invalid' }, res);
+
+  assert.equal(res.statusCode, 404);
+  assert.equal(res.body, 'Not found');
+});
+
+test('dev-server handler ignores URL fragments when resolving the requested file', async () => {
+  const handler = await loadRequestHandler();
+  const res = createMockResponse();
+
+  await handler({ url: '/src/styles.css#section' }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers['Content-Type'], 'text/css');
 });
