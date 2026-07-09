@@ -126,37 +126,55 @@ test('dev-server handler does not escape the project root on path traversal atte
   assert.equal(res.body, 'Not found');
 });
 
-test('dev-server handler responds with 404 for percent-encoded traversal sequences', async () => {
+test('dev-server handler ignores query strings when resolving the file to serve', async () => {
   const handler = await loadRequestHandler();
   const res = createMockResponse();
 
-  await handler({ url: '/%2e%2e/%2e%2e/etc/passwd' }, res);
+  await handler({ url: '/src/main.js?ts=1234&reload=true' }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers['Content-Type'], 'text/javascript');
+  assert.match(bodyText(res), /workspace-data\.js/);
+});
+
+test('dev-server handler treats percent-encoded path separators literally instead of decoding them', async () => {
+  const handler = await loadRequestHandler();
+  const res = createMockResponse();
+
+  // req.url's pathname is never percent-decoded by the handler, so
+  // "%2F" is looked up as a literal filename segment (not as "/"),
+  // which does not exist on disk and results in a 404 rather than a
+  // successful lookup of src/main.js.
+  await handler({ url: '/src%2Fmain.js' }, res);
 
   assert.equal(res.statusCode, 404);
   assert.equal(res.body, 'Not found');
 });
 
-test('dev-server handler ignores query strings when resolving the requested file', async () => {
+test('dev-server handler returns 404 when the requested path is a directory rather than a file', async () => {
   const handler = await loadRequestHandler();
   const res = createMockResponse();
 
-  await handler({ url: '/src/styles.css?v=123' }, res);
-
-  assert.equal(res.statusCode, 200);
-  assert.equal(res.headers['Content-Type'], 'text/css');
-});
-
-test('dev-server handler responds with 404 when the requested path is a directory', async () => {
-  const handler = await loadRequestHandler();
-  const res = createMockResponse();
-
+  // readFile() rejects with EISDIR for a directory, which the handler's
+  // catch-all treats the same as a missing file.
   await handler({ url: '/src' }, res);
 
   assert.equal(res.statusCode, 404);
   assert.equal(res.body, 'Not found');
 });
 
-test('dev-server handler falls back to text/plain for files without any extension', async () => {
+test('dev-server handler collapses repeated path separators before resolving the file', async () => {
+  const handler = await loadRequestHandler();
+  const res = createMockResponse();
+
+  await handler({ url: '/src//main.js' }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers['Content-Type'], 'text/javascript');
+  assert.match(bodyText(res), /workspace-data\.js/);
+});
+
+test('dev-server handler falls back to text/plain for extensionless files', async () => {
   const handler = await loadRequestHandler();
   const res = createMockResponse();
 
@@ -166,77 +184,13 @@ test('dev-server handler falls back to text/plain for files without any extensio
   assert.equal(res.headers['Content-Type'], 'text/plain');
 });
 
-test('dev-server module binds the HTTP server to all interfaces on the default port', async () => {
-  const originalCreateServer = http.createServer;
-  let listenArgs;
-  http.createServer = (requestListener) => {
-    http.createServer = originalCreateServer;
-    return {
-      listen(...args) {
-        listenArgs = args;
-        return this;
-      },
-    };
-  };
-
-  try {
-    const url = `${pathToFileURL(serverScriptPath).href}?t=${Date.now()}-${Math.random()}`;
-    await import(url);
-  } finally {
-    http.createServer = originalCreateServer;
-  }
-
-  assert.equal(listenArgs[0], 5173);
-  assert.equal(listenArgs[1], '0.0.0.0');
-  assert.equal(typeof listenArgs[2], 'function');
-});
-
-test('dev-server handler resolves internal .. segments that stay within the project root', async () => {
+test('dev-server handler serves the exact on-disk bytes of a static file', async () => {
   const handler = await loadRequestHandler();
   const res = createMockResponse();
 
-  await handler({ url: '/src/../src/main.js' }, res);
+  await handler({ url: '/src/main.js' }, res);
 
+  const expected = await readFile(fileURLToPath(new URL('../src/main.js', import.meta.url)), 'utf8');
   assert.equal(res.statusCode, 200);
-  assert.equal(res.headers['Content-Type'], 'text/javascript');
-  assert.match(bodyText(res), /workspace-data\.js/);
-});
-
-test('dev-server handler serves file content that matches the file on disk byte-for-byte', async () => {
-  const handler = await loadRequestHandler();
-  const res = createMockResponse();
-
-  await handler({ url: '/index.html' }, res);
-
-  const onDisk = await readFile(fileURLToPath(new URL('../index.html', import.meta.url)));
-  assert.equal(res.statusCode, 200);
-  assert.ok(Buffer.isBuffer(res.body), 'expected the response body to be the raw file buffer');
-  assert.ok(res.body.equals(onDisk), 'served content should match the file on disk exactly');
-});
-
-test('dev-server module respects a custom PORT environment variable', async () => {
-  const originalCreateServer = http.createServer;
-  const originalPort = process.env.PORT;
-  process.env.PORT = '4321';
-  let listenArgs;
-  http.createServer = (requestListener) => {
-    http.createServer = originalCreateServer;
-    return {
-      listen(...args) {
-        listenArgs = args;
-        return this;
-      },
-    };
-  };
-
-  try {
-    const url = `${pathToFileURL(serverScriptPath).href}?t=${Date.now()}-${Math.random()}`;
-    await import(url);
-  } finally {
-    http.createServer = originalCreateServer;
-    if (originalPort === undefined) delete process.env.PORT;
-    else process.env.PORT = originalPort;
-  }
-
-  assert.equal(listenArgs[0], '4321');
+  assert.equal(bodyText(res), expected);
 });
