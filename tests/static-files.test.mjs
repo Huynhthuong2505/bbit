@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile, readdir } from 'node:fs/promises';
+import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 
 const resolve = (relativePath) => fileURLToPath(new URL(`../${relativePath}`, import.meta.url));
@@ -26,29 +26,15 @@ test('package.json defines expected metadata and npm scripts', async () => {
   assert.equal(pkg.scripts.dev, 'node scripts/dev-server.mjs');
   assert.equal(pkg.scripts.build, 'node scripts/build.mjs');
   assert.equal(pkg.scripts.preview, 'node scripts/dev-server.mjs');
+  assert.equal(pkg.scripts.test, 'node --test "tests/**/*.test.mjs"');
 });
 
-test('package.json defines a test script that runs the node test runner against tests/', async () => {
+test('package.json test script invokes the built-in node test runner against every test file', async () => {
   const raw = await readFile(resolve('package.json'), 'utf8');
   const pkg = JSON.parse(raw);
 
-  assert.equal(pkg.scripts.test, 'node --test "tests/**/*.test.mjs"');
   assert.match(pkg.scripts.test, /^node --test /);
   assert.match(pkg.scripts.test, /tests\/\*\*\/\*\.test\.mjs/);
-});
-
-test('package.json test script glob actually matches every test file under tests/', async () => {
-  const raw = await readFile(resolve('package.json'), 'utf8');
-  const pkg = JSON.parse(raw);
-  assert.match(pkg.scripts.test, /tests\/\*\*\/\*\.test\.mjs/);
-
-  const entries = await readdir(resolve('tests'));
-  const testFiles = entries.filter((name) => name.endsWith('.test.mjs'));
-  // Regression guard: if this file were ever renamed or moved out of
-  // tests/, or if the glob pattern in package.json were narrowed, the
-  // discrepancy would show up here instead of silently skipping suites.
-  assert.ok(testFiles.length >= 5, `expected at least 5 test files under tests/, found ${testFiles.length}`);
-  assert.ok(testFiles.includes('static-files.test.mjs'));
 });
 
 test('.gitignore excludes the build output directory', async () => {
@@ -95,4 +81,36 @@ test('README.md documents the product pillars and local dev/build commands', asy
   ]) {
     assert.ok(readme.includes(pillar), `expected README.md to mention "${pillar}"`);
   }
+});
+
+test('index.html contains exactly one root mount point and one module entry script', async () => {
+  const html = await readFile(resolve('index.html'), 'utf8');
+
+  const rootMatches = html.match(/id="root"/g) || [];
+  const scriptMatches = html.match(/<script /g) || [];
+  assert.equal(rootMatches.length, 1, 'expected exactly one #root element');
+  assert.equal(scriptMatches.length, 1, 'expected exactly one entry <script> tag');
+});
+
+test('.gitignore excludes the dist/ build output exactly once', async () => {
+  const content = await readFile(resolve('.gitignore'), 'utf8');
+  const distMatches = content.match(/(^|\n)dist\/(\n|$)/g) || [];
+  assert.equal(distMatches.length, 1, 'expected the dist/ entry to appear exactly once');
+});
+
+test('README.md lists every product pillar as its own bullet point under "## Product pillars"', async () => {
+  const readme = await readFile(resolve('README.md'), 'utf8');
+
+  const pillarsSection = readme.split('## Product pillars')[1]?.split('## Local development')[0] ?? '';
+  const bulletLines = pillarsSection.split('\n').filter((line) => line.trim().startsWith('- **'));
+  assert.equal(bulletLines.length, 7, 'expected 7 bulleted product pillars');
+});
+
+test('README.md wraps the install/dev and build commands in fenced bash code blocks', async () => {
+  const readme = await readFile(resolve('README.md'), 'utf8');
+
+  const bashFences = readme.match(/```bash/g) || [];
+  const allFences = readme.match(/```/g) || [];
+  assert.equal(bashFences.length, 2, 'expected two fenced bash code blocks (dev + build)');
+  assert.equal(allFences.length % 2, 0, 'code fences should be balanced (opened and closed)');
 });

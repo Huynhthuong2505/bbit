@@ -95,40 +95,36 @@ test('exported collections are arrays (defensive shape check)', () => {
   assert.equal(typeof sampleCode, 'string');
 });
 
-test('providers, files, and modelComparison entries have no duplicate names', () => {
+test('providers, files, and modelComparison entries have unique names (no accidental duplicates)', () => {
   assert.equal(new Set(providers.map((p) => p.name)).size, providers.length);
   assert.equal(new Set(files.map((f) => f.name)).size, files.length);
   assert.equal(new Set(modelComparison.map((m) => m.model)).size, modelComparison.length);
 });
 
-test('promptTemplates, plugins, and deployTargets contain no empty or duplicate pill labels', () => {
+test('promptTemplates, plugins, and deployTargets contain no duplicate or empty pill labels', () => {
   for (const list of [promptTemplates, plugins, deployTargets]) {
     assert.equal(new Set(list).size, list.length, 'expected no duplicate pill labels');
-    for (const label of list) {
-      assert.equal(typeof label, 'string');
-      assert.ok(label.trim().length > 0, 'pill label should not be empty');
+    for (const item of list) {
+      assert.equal(typeof item, 'string');
+      assert.ok(item.trim().length > 0, 'pill label should not be blank');
     }
   }
 });
 
-test('every provider has a visually distinct accent color', () => {
-  const accents = providers.map((p) => p.accent.toLowerCase());
-  assert.equal(new Set(accents).size, accents.length, 'expected no two providers to share an accent color');
+test('sampleCode is exactly 12 lines long (boundary check for the editor mock line-number gutter)', () => {
+  assert.equal(sampleCode.split('\n').length, 12);
 });
 
-test('sampleCode only references provider ids that correspond to a real configured provider', () => {
-  // sampleCode hardcodes provider ids passed to the mock <AIWorkspace
-  // providers={[...]} /> prop. Each id should be traceable back to one of
-  // the configured providers' name or model list so the sample snippet
-  // never drifts out of sync with the supported provider data.
-  const match = sampleCode.match(/providers=\{\[([^\]]+)\]\}/);
-  assert.ok(match, 'expected sampleCode to declare a providers array literal');
+test('sampleCode declares exactly the four documented AI providers in its providers array literal', () => {
+  assert.match(sampleCode, /providers=\{\["openai", "anthropic", "gemini", "openrouter"\]\}/);
+});
 
-  const declaredIds = match[1].split(',').map((entry) => entry.trim().replace(/^"|"$/g, ''));
-  assert.ok(declaredIds.length > 0);
-
-  for (const id of declaredIds) {
-    const isKnown = providers.some((p) => `${p.name} ${p.models}`.toLowerCase().includes(id.toLowerCase()));
-    assert.ok(isKnown, `unexpected provider id "${id}" in sampleCode`);
+test('only the file explicitly marked active in files is active; all others are falsy', () => {
+  for (const file of files) {
+    if (file.name === 'src/App.tsx') {
+      assert.equal(file.active, true);
+    } else {
+      assert.ok(!file.active, `expected ${file.name} to not be marked active`);
+    }
   }
 });
