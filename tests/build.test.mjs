@@ -192,3 +192,93 @@ test('build.mjs preserves empty subdirectories nested inside src/', async () => 
     await rm(dir, { recursive: true, force: true });
   }
 });
+
+test('build.mjs fails when index.html exists as a directory instead of a regular file', async () => {
+  const dir = await createTempProject();
+  try {
+    await mkdir(join(dir, 'index.html'), { recursive: true });
+    await mkdir(join(dir, 'src'), { recursive: true });
+    await writeFile(join(dir, 'src', 'main.js'), "console.log('main');");
+    await writeFile(join(dir, 'src', 'styles.css'), 'body {}');
+
+    const result = runBuild(dir);
+
+    assert.notEqual(result.status, 0);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('build.mjs overwrites a stale dist/index.html with updated content on rebuild', async () => {
+  const dir = await createTempProject();
+  try {
+    await writeFixtureFiles(dir);
+    const first = runBuild(dir);
+    assert.equal(first.status, 0, first.stderr);
+
+    await writeFile(join(dir, 'index.html'), '<html><body>updated</body></html>');
+    const second = runBuild(dir);
+    assert.equal(second.status, 0, second.stderr);
+
+    assert.equal(await readFile(join(dir, 'dist', 'index.html'), 'utf8'), '<html><body>updated</body></html>');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('build.mjs copies multiple sibling files across nested directories at different depths', async () => {
+  const dir = await createTempProject();
+  try {
+    await writeFixtureFiles(dir);
+    await mkdir(join(dir, 'src', 'components', 'nested'), { recursive: true });
+    await writeFile(join(dir, 'src', 'components', 'a.js'), 'export const a = 1;');
+    await writeFile(join(dir, 'src', 'components', 'nested', 'b.js'), 'export const b = 2;');
+
+    const result = runBuild(dir);
+    assert.equal(result.status, 0, result.stderr);
+
+    assert.equal(await readFile(join(dir, 'dist', 'src', 'components', 'a.js'), 'utf8'), 'export const a = 1;');
+    assert.equal(await readFile(join(dir, 'dist', 'src', 'components', 'nested', 'b.js'), 'utf8'), 'export const b = 2;');
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('build.mjs does not print the success message on stdout when a required file is missing', async () => {
+  const dir = await createTempProject();
+  try {
+    await writeFile(join(dir, 'index.html'), '<html></html>');
+
+    const result = runBuild(dir);
+
+    assert.notEqual(result.status, 0);
+    assert.doesNotMatch(result.stdout, /Built static AI Coding Workspace into dist\//);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});
+
+test('build.mjs fails when a stale dist/src file collides with a same-named directory added later in src/', async () => {
+  const dir = await createTempProject();
+  try {
+    await writeFixtureFiles(dir);
+    await writeFile(join(dir, 'src', 'widget'), 'stale flat file');
+    const first = runBuild(dir);
+    assert.equal(first.status, 0, first.stderr);
+    assert.equal(await pathExists(join(dir, 'dist', 'src', 'widget')), true);
+
+    await rm(join(dir, 'src', 'widget'));
+    await mkdir(join(dir, 'src', 'widget'), { recursive: true });
+    await writeFile(join(dir, 'src', 'widget', 'index.js'), 'export default {};');
+
+    const second = runBuild(dir);
+
+    // copyDir's mkdir(target, { recursive: true }) throws when the target
+    // path already exists as a regular file (left over from the first
+    // build's flat copy), since a directory can't be created in place of
+    // an existing file.
+    assert.notEqual(second.status, 0);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+});

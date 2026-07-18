@@ -165,3 +165,27 @@ test('renders the Monaco editor mock with an accessible label and a minimap plac
   assert.match(root.innerHTML, /<div class="monaco-mock" aria-label="Monaco Editor preview">/);
   assert.match(root.innerHTML, /<div class="minimap"><\/div>/);
 });
+
+test('renders the top navigation bar with the brand mark, Docs and GitHub sign-in actions', async () => {
+  const root = await renderMain();
+  assert.match(root.innerHTML, /class="topbar"/);
+  assert.match(root.innerHTML, /class="brand">.*AI Coding Workspace/);
+  assert.match(root.innerHTML, /<button>Docs<\/button>/);
+  assert.match(root.innerHTML, /<button class="primary">.*Sign in GitHub<\/button>/);
+});
+
+test('leaves single quotes unescaped while escaping &, <, > and " in the sample code preview', async () => {
+  // sampleCode contains single-quoted strings (e.g. the import statement).
+  // escapeHtml's character class is [&<>"], so apostrophes are expected to
+  // pass through unescaped. This pins down that boundary so a future change
+  // to the escaping logic is caught as an intentional, reviewed change.
+  const root = await renderMain();
+  assert.ok(sampleCode.includes("'"), 'fixture assumption: sampleCode should contain single quotes');
+  assert.ok(root.innerHTML.includes("from '@bbit/workspace'"), 'single quotes should be rendered unescaped');
+});
+
+test('produces identical markup across independent renders (no shared mutable state)', async () => {
+  const first = await renderMain();
+  const second = await renderMain();
+  assert.equal(first.innerHTML, second.innerHTML);
+});

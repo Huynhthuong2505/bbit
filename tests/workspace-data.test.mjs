@@ -128,3 +128,13 @@ test('only the file explicitly marked active in files is active; all others are 
     }
   }
 });
+
+test('every provider has a visually distinct accent color', () => {
+  const accents = providers.map((p) => p.accent.toLowerCase());
+  assert.equal(new Set(accents).size, accents.length, 'expected no two providers to share an accent color');
+});
+
+test('sampleCode declares the documented agent capabilities and live preview frameworks', () => {
+  assert.match(sampleCode, /agentMode=\{\{ canWriteFiles: true, canRunBuilds: true, canCommit: true \}\}/);
+  assert.match(sampleCode, /livePreview=\{\{ frameworks: \["React", "Vue", "Next\.js", "Vite"\] \}\}/);
+});

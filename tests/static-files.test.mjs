@@ -114,3 +114,34 @@ test('README.md wraps the install/dev and build commands in fenced bash code blo
   assert.equal(bashFences.length, 2, 'expected two fenced bash code blocks (dev + build)');
   assert.equal(allFences.length % 2, 0, 'code fences should be balanced (opened and closed)');
 });
+
+test('package.json omits a main entry point and dependency fields for this static site', async () => {
+  const raw = await readFile(resolve('package.json'), 'utf8');
+  const pkg = JSON.parse(raw);
+
+  assert.equal(pkg.main, undefined);
+  assert.equal(pkg.dependencies, undefined);
+  assert.equal(pkg.devDependencies, undefined);
+});
+
+test('index.html declares an English document language and contains no inline scripts', async () => {
+  const html = await readFile(resolve('index.html'), 'utf8');
+  assert.match(html, /<html lang="en">/);
+  assert.doesNotMatch(html, /<script>/);
+});
+
+test('.gitignore does not exclude essential project source paths', async () => {
+  const content = await readFile(resolve('.gitignore'), 'utf8');
+  const lines = content.split('\n').map((line) => line.trim());
+  for (const essential of ['src/', 'index.html', 'package.json', 'scripts/']) {
+    assert.ok(!lines.includes(essential), `expected .gitignore to not ignore ${essential}`);
+  }
+});
+
+test('README.md orders its bash fences as install/dev instructions followed by build instructions', async () => {
+  const readme = await readFile(resolve('README.md'), 'utf8');
+  const devIndex = readme.indexOf('npm run dev');
+  const buildIndex = readme.indexOf('npm run build');
+  assert.ok(devIndex > -1 && buildIndex > -1, 'expected both npm run dev and npm run build to be documented');
+  assert.ok(devIndex < buildIndex, 'expected the dev instructions to appear before the build instructions');
+});

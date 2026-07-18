@@ -194,3 +194,51 @@ test('dev-server handler serves the exact on-disk bytes of a static file', async
   assert.equal(res.statusCode, 200);
   assert.equal(bodyText(res), expected);
 });
+
+test('dev-server handler responds with 404 for percent-encoded traversal sequences', async () => {
+  const handler = await loadRequestHandler();
+  const res = createMockResponse();
+
+  // Percent-encoded segments are never decoded by the handler, so
+  // "%2e%2e" is looked up as a literal filename rather than being
+  // interpreted as "..", which does not exist on disk and results in 404.
+  await handler({ url: '/%2e%2e/%2e%2e/etc/passwd' }, res);
+
+  assert.equal(res.statusCode, 404);
+  assert.equal(res.body, 'Not found');
+});
+
+test('dev-server handler blocks traversal sequences that appear after a valid path segment', async () => {
+  const handler = await loadRequestHandler();
+  const res = createMockResponse();
+
+  await handler({ url: '/src/../../../../../../etc/passwd' }, res);
+
+  assert.equal(res.statusCode, 404);
+  assert.equal(res.body, 'Not found');
+});
+
+test('dev-server handler resolves internal .. segments that stay within the project root', async () => {
+  const handler = await loadRequestHandler();
+  const res = createMockResponse();
+
+  // normalize() collapses "src/../src/main.js" down to "src/main.js"
+  // before the leading-".." strip runs, so this resolves to a real file
+  // instead of being treated as an escape attempt.
+  await handler({ url: '/src/../src/main.js' }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers['Content-Type'], 'text/javascript');
+});
+
+test('dev-server handler ignores query strings on non-JS files as well', async () => {
+  const handler = await loadRequestHandler();
+  const res = createMockResponse();
+
+  await handler({ url: '/package.json?cache=bust' }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.headers['Content-Type'], 'application/json');
+  const pkg = JSON.parse(bodyText(res));
+  assert.equal(pkg.name, 'ai-coding-workspace');
+});
