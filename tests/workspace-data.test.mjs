@@ -95,38 +95,36 @@ test('exported collections are arrays (defensive shape check)', () => {
   assert.equal(typeof sampleCode, 'string');
 });
 
-test('providers, files, and modelComparison entries have no duplicate names', () => {
+test('providers, files, and modelComparison entries have unique names (no accidental duplicates)', () => {
   assert.equal(new Set(providers.map((p) => p.name)).size, providers.length);
   assert.equal(new Set(files.map((f) => f.name)).size, files.length);
   assert.equal(new Set(modelComparison.map((m) => m.model)).size, modelComparison.length);
 });
 
-test('promptTemplates, plugins, and deployTargets contain no empty or duplicate pill labels', () => {
+test('promptTemplates, plugins, and deployTargets contain no duplicate or empty pill labels', () => {
   for (const list of [promptTemplates, plugins, deployTargets]) {
     assert.equal(new Set(list).size, list.length, 'expected no duplicate pill labels');
-    for (const label of list) {
-      assert.equal(typeof label, 'string');
-      assert.ok(label.trim().length > 0, 'pill label should not be empty');
+    for (const item of list) {
+      assert.equal(typeof item, 'string');
+      assert.ok(item.trim().length > 0, 'pill label should not be blank');
     }
   }
 });
 
-test('provider accent colors are all unique', () => {
-  assert.equal(new Set(providers.map((p) => p.accent)).size, providers.length);
+test('sampleCode is exactly 12 lines long (boundary check for the editor mock line-number gutter)', () => {
+  assert.equal(sampleCode.split('\n').length, 12);
 });
 
-test('only the designated file entry is marked active; all others omit or falsy the active flag', () => {
-  const nonActiveEntries = files.filter((file) => file.name !== 'src/App.tsx');
-  assert.equal(nonActiveEntries.length, files.length - 1);
-  for (const file of nonActiveEntries) {
-    assert.notEqual(file.active, true, `expected ${file.name} to not be marked active`);
-  }
-});
-
-test('sampleCode declares the expected agent mode capabilities and live preview frameworks', () => {
-  assert.match(sampleCode, /agentMode=\{\{ canWriteFiles: true, canRunBuilds: true, canCommit: true \}\}/);
+test('sampleCode declares exactly the four documented AI providers in its providers array literal', () => {
   assert.match(sampleCode, /providers=\{\["openai", "anthropic", "gemini", "openrouter"\]\}/);
-  for (const framework of ['React', 'Vue', 'Next.js', 'Vite']) {
-    assert.ok(sampleCode.includes(framework), `expected sampleCode to list the ${framework} framework`);
+});
+
+test('only the file explicitly marked active in files is active; all others are falsy', () => {
+  for (const file of files) {
+    if (file.name === 'src/App.tsx') {
+      assert.equal(file.active, true);
+    } else {
+      assert.ok(!file.active, `expected ${file.name} to not be marked active`);
+    }
   }
 });

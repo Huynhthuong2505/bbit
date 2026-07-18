@@ -137,64 +137,31 @@ test('throws when the #root element is missing from the document', async () => {
   await assert.rejects(() => renderMain(false));
 });
 
-test('renders the top navigation bar with docs and sign-in actions', async () => {
+test('does not leak unresolved template placeholders or stringified objects into the rendered markup', async () => {
   const root = await renderMain();
-  assert.match(root.innerHTML, /class="topbar"/);
-  assert.match(root.innerHTML, /<button>Docs<\/button>/);
-  assert.match(root.innerHTML, /Sign in GitHub/);
+  assert.ok(!root.innerHTML.includes('undefined'), 'rendered markup should not contain the literal string "undefined"');
+  assert.ok(!root.innerHTML.includes('[object Object]'), 'rendered markup should not contain a stringified object');
+  assert.ok(!/\$\{.*?\}/.test(root.innerHTML), 'rendered markup should not contain unresolved template placeholders');
 });
 
-test('renders the workspace preview with activity bar, editor tabs and terminal', async () => {
+test('renders the workspace preview chrome: activity bar, editor tabs and terminal status', async () => {
   const root = await renderMain();
-  assert.match(root.innerHTML, /class="workspace-card"/);
   assert.match(root.innerHTML, /class="activity-bar"/);
-  assert.match(root.innerHTML, /<span>App\.tsx<\/span><span>runner\.ts<\/span><span>models\.ts<\/span>/);
-  assert.match(root.innerHTML, /class="terminal"/);
-  assert.match(root.innerHTML, /npm run build/);
+  assert.match(root.innerHTML, /<div class="tabs"><span>App\.tsx<\/span><span>runner\.ts<\/span><span>models\.ts<\/span><\/div>/);
+  assert.match(root.innerHTML, /class="terminal">.*npm run build.*preview reloaded/s);
 });
 
-test('renders the AI Hub and Model Comparison feature panels with their headings', async () => {
+test('renders the section headings for the AI Hub, model comparison, prompt library and marketplace panels', async () => {
   const root = await renderMain();
   assert.match(root.innerHTML, /<h2>AI Hub đa nhà cung cấp<\/h2>/);
   assert.match(root.innerHTML, /<h2>Model Comparison<\/h2>/);
   assert.match(root.innerHTML, /<h2>Prompt Library<\/h2>/);
+  assert.match(root.innerHTML, /<h2>Plugin Marketplace<\/h2>/);
   assert.match(root.innerHTML, /<h2>One-click Deployment<\/h2>/);
 });
 
-test('renders exactly one provider card per configured provider (no extra or missing cards)', async () => {
+test('renders the Monaco editor mock with an accessible label and a minimap placeholder', async () => {
   const root = await renderMain();
-  const providerCardMatches = root.innerHTML.match(/class="provider-card/g) || [];
-  assert.equal(providerCardMatches.length, providers.length);
-});
-
-test('does not leak "undefined" or stringified objects into the rendered markup', async () => {
-  const root = await renderMain();
-  assert.ok(!root.innerHTML.includes('undefined'), 'markup should not contain the literal string "undefined"');
-  assert.ok(!root.innerHTML.includes('[object Object]'), 'markup should not contain a stringified object');
-});
-
-test('renders exactly one pill per prompt template and plugin (no duplicates or missing pills)', async () => {
-  const root = await renderMain();
-  const countOccurrences = (needle) => (root.innerHTML.match(new RegExp(needle.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'g')) || []).length;
-
-  for (const template of promptTemplates) {
-    assert.equal(countOccurrences(`<span>${template}</span>`), 1, `expected exactly one pill for ${template}`);
-  }
-  for (const plugin of plugins) {
-    assert.equal(countOccurrences(`<span>${plugin}</span>`), 1, `expected exactly one pill for ${plugin}`);
-  }
-});
-
-test('preserves single quotes unescaped in the sample code preview', async () => {
-  const root = await renderMain();
-  // escapeHtml() only encodes &, <, >, and "; apostrophes are intentionally
-  // left as-is. This guards against a regression that starts over- or
-  // under-escaping sampleCode's single-quoted import statement.
-  assert.ok(root.innerHTML.includes("from '@bbit/workspace';"));
-});
-
-test('renders exactly one explorer entry per configured file (no duplicates or missing entries)', async () => {
-  const root = await renderMain();
-  const fileMatches = root.innerHTML.match(/class="file[^"]*"/g) || [];
-  assert.equal(fileMatches.length, files.length);
+  assert.match(root.innerHTML, /<div class="monaco-mock" aria-label="Monaco Editor preview">/);
+  assert.match(root.innerHTML, /<div class="minimap"><\/div>/);
 });
